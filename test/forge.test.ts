@@ -259,7 +259,7 @@ describe("resolveToken", () => {
       expect(result).toEqual({ token: "gho_second", source: "cli" });
       expect(mockedExecFileSync).toHaveBeenCalledWith(
         "gh",
-        ["auth", "token", "--hostname", "github.com", "--user", "second"],
+        ["auth", "token", "--hostname", "github.com", "--user=second"],
         expect.objectContaining({ encoding: "utf-8", timeout: 5000 }),
       );
     });
@@ -378,5 +378,25 @@ describe("forge subpaths", () => {
     expect(github.resolve()).toEqual({ token: "gh", source: "env" });
     expect(gitlab.resolve()).toEqual({ token: "gl", source: "env" });
     expect(gitea.resolve()).toEqual({ token: "tea", source: "env" });
+  });
+});
+
+describe("gh account argument", () => {
+  it("passes the account glued to --user, so a leading dash stays a value", async () => {
+    vi.resetAllMocks();
+    delete process.env.GH_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    vi.mocked(execFileSync).mockReturnValueOnce("tok\n");
+    const { resolve } = await import("../src/github.ts");
+
+    resolve({ account: "--hostname=evil.example" });
+
+    expect(vi.mocked(execFileSync).mock.calls[0]?.[1]).toEqual([
+      "auth",
+      "token",
+      "--hostname",
+      "github.com",
+      "--user=--hostname=evil.example",
+    ]);
   });
 });

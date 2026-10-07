@@ -113,7 +113,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
     case "github": {
       // `--user` reads one login's token without switching the active one.
       const args = ["auth", "token", "--hostname", hostname];
-      if (account !== undefined) args.push("--user", account);
+      if (account !== undefined) args.push(`--user=${account}`);
       return runCli("gh", args);
     }
     case "gitlab":
