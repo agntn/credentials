@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import pkg from "../package.json" with { type: "json" };
 import * as root from "../src/index.ts";
 import * as cloudflare from "../src/cloudflare.ts";
 import * as gitea from "../src/gitea.ts";
@@ -7,7 +8,7 @@ import * as gitlab from "../src/gitlab.ts";
 
 describe("@agntn/credentials", () => {
   it("exports the version from package.json", () => {
-    expect(root.version).toBe("0.0.0");
+    expect(root.version).toBe(pkg.version);
   });
 
   it("keeps the services out of the root", () => {

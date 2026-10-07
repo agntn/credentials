@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { describe, expect, it } from "vite-plus/test";
+import pkg from "../package.json" with { type: "json" };
 
 const switches = new Set([
   "CI",
@@ -128,7 +129,7 @@ describe("credentials CLI", () => {
       stdout: "",
       stderr: 'Invalid arguments: unknown option "--stdio"; takes no options\n',
     });
-    expect(run("--version")).toMatchObject({ code: 0, stdout: "0.0.0\n" });
+    expect(run("--version")).toMatchObject({ code: 0, stdout: `${pkg.version}\n` });
     expect(run("list", "--", "-_8")).toMatchObject({ code: 1 });
   });
 });
