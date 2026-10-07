@@ -1,6 +1,6 @@
 {
   "name": "@agntn/credentials",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea and Cloudflare.",
   "keywords": [
     "agents",

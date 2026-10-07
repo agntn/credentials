@@ -1,6 +1,18 @@
 # Changelog
 
 
+## v0.0.2
+
+[compare changes](https://github.com/agntn/credentials/compare/v0.0.1...v0.0.2)
+
+### ✅ Tests
+
+- Read the version from package.json, not a literal ([3c5b5b3](https://github.com/agntn/credentials/commit/3c5b5b3))
+
+### ❤️ Contributors
+
+- Oritwoen ([@oritwoen](https://github.com/oritwoen))
+
 ## v0.0.1
 
 
