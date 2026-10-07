@@ -1,0 +1,340 @@
+/**
+ * Token lookup shared by the git forges.
+ *
+ * Every forge tries the same chain:
+ *   1. Explicit token (passed in options)
+ *   2. Environment variables (GH_TOKEN, GITLAB_TOKEN, ...)
+ *   3. The forge CLI (gh, glab)
+ *   4. The CLI's config file, for a machine with the config but not the CLI
+ */
+
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { CredentialSource } from "./types.ts";
+
+export type Forge = "github" | "gitlab" | "gitea";
+
+/** A forge token and the step of the chain that found it. */
+export interface ForgeCredential {
+  readonly token: string;
+  readonly source: CredentialSource;
+}
+
+export interface ForgeOptions {
+  /** Wins over everything else, even as an empty string, which asks for anonymous access. */
+  readonly token?: string;
+  /** API or web URL of a self-hosted instance; its hostname picks the CLI login. */
+  readonly baseURL?: string;
+  /**
+   * Login to read instead of the active one. Only `gh` can pick among several logins,
+   * so on GitLab and Gitea a named account finds nothing past the environment.
+   */
+  readonly account?: string;
+}
+
+const DEFAULT_HOSTS: Record<Forge, string> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+  gitea: "gitea.com",
+};
+
+const ENV_KEYS: Record<Forge, readonly string[]> = {
+  github: ["GH_TOKEN", "GITHUB_TOKEN"],
+  gitlab: ["GITLAB_TOKEN", "GL_TOKEN", "GITLAB_PAT"],
+  gitea: ["GITEA_TOKEN"],
+};
+
+const CLI_TIMEOUT_MS = 5000;
+
+/**
+ * Resolve a token for one forge.
+ * @param forge - The forge the token is for.
+ * @param options - Explicit token, self-hosted URL and account.
+ * @returns {ForgeCredential | null} The token, or null when no step of the chain has one.
+ */
+export function resolveForge(forge: Forge, options?: ForgeOptions): ForgeCredential | null {
+  if (options?.token !== undefined) {
+    return { token: options.token, source: "explicit" };
+  }
+
+  const envToken = fromEnv(forge);
+  if (envToken !== undefined) return { token: envToken, source: "env" };
+
+  const account = options?.account;
+  if (account !== undefined && forge !== "github") return null;
+
+  return fromLogin(forge, hostnameOf(forge, options?.baseURL), account);
+}
+
+/**
+ * Read the first set token variable. An empty one still ends the chain: `GH_TOKEN=` asks for anonymous access.
+ * @param forge - The forge whose variables to read.
+ * @returns {string | undefined} The value, possibly empty, or undefined when none is set.
+ */
+function fromEnv(forge: Forge): string | undefined {
+  for (const key of ENV_KEYS[forge]) {
+    const value = process.env[key];
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+/**
+ * Ask the CLI first, then read its config file, for a machine that has the file but not the CLI.
+ * @param forge - The forge whose CLI to ask.
+ * @param hostname - The host whose login to read.
+ * @param account - The login to read instead of the active one.
+ * @returns {ForgeCredential | null} The token, or null when neither holds one.
+ */
+function fromLogin(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
+  const cliToken = fromCli(forge, hostname, account);
+  if (cliToken !== null) return { token: cliToken, source: "cli" };
+  const configToken = fromConfig(forge, hostname, account);
+  return configToken === null ? null : { token: configToken, source: "config" };
+}
+
+function hostnameOf(forge: Forge, baseURL?: string): string {
+  if (baseURL) {
+    try {
+      return new URL(baseURL).hostname;
+    } catch {
+      // invalid URL, fall through to the default host
+    }
+  }
+  return DEFAULT_HOSTS[forge];
+}
+
+// --- CLI tools ---
+
+function fromCli(forge: Forge, hostname: string, account?: string): string | null {
+  switch (forge) {
+    case "github": {
+      // `--user` reads one login's token without switching the active one.
+      const args = ["auth", "token", "--hostname", hostname];
+      if (account !== undefined) args.push("--user", account);
+      return runCli("gh", args);
+    }
+    case "gitlab":
+      return runCli("glab", ["config", "get", "token", "--host", hostname]);
+    case "gitea":
+      // tea has no command that prints a token, so only its config file counts.
+      return null;
+  }
+}
+
+function runCli(command: string, args: readonly string[]): string | null {
+  try {
+    const output = execFileSync(command, args, {
+      encoding: "utf-8",
+      timeout: CLI_TIMEOUT_MS,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return output.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+// --- Config files ---
+
+function fromConfig(forge: Forge, hostname: string, account?: string): string | null {
+  try {
+    switch (forge) {
+      case "github":
+        return readGhConfig(hostname, account);
+      case "gitlab":
+        return readGlabConfig(hostname);
+      case "gitea":
+        return readTeaConfig(hostname);
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read gh CLI config at ~/.config/gh/hosts.yml
+ *
+ * Format:
+ *   github.com:
+ *     users:
+ *       username:
+ *         oauth_token: gho_...
+ *     oauth_token: gho_...
+ *     user: username
+ *
+ * A named account reads only its own `users` entry, never the active token.
+ * @param hostname - The host whose login to read.
+ * @param account - The login to read instead of the active one.
+ * @returns {string | null} The stored token, or null when the host or login has none.
+ */
+function readGhConfig(hostname: string, account?: string): string | null {
+  const content = readFileSync(join(ghConfigDir(), "hosts.yml"), "utf-8");
+  const hostSection = getYamlMappingSection(content, hostname);
+  if (!hostSection) return null;
+  if (account !== undefined) {
+    const usersSection = getYamlMappingSection(hostSection, "users");
+    const userSection = usersSection && getYamlMappingSection(usersSection, account);
+    return userSection ? extractYamlField(userSection, "oauth_token") : null;
+  }
+  return extractYamlField(hostSection, "oauth_token");
+}
+
+/**
+ * Read glab config at ~/.config/glab-cli/config.yml
+ *
+ * Format:
+ *   hosts:
+ *     gitlab.com:
+ *       token: glpat-...
+ * @param hostname - The host whose token to read.
+ * @returns {string | null} The stored token, or null when the host has none.
+ */
+function readGlabConfig(hostname: string): string | null {
+  const content = readFileSync(join(configDir(), "glab-cli", "config.yml"), "utf-8");
+  const hostsSection = getYamlMappingSection(content, "hosts");
+  if (!hostsSection) return null;
+  const hostSection = getYamlMappingSection(hostsSection, hostname);
+  if (!hostSection) return null;
+  return extractYamlField(hostSection, "token");
+}
+
+/**
+ * Read tea config at ~/.config/tea/config.yml
+ *
+ * Format:
+ *   logins:
+ *     - name: gitea.com
+ *       url: https://gitea.com
+ *       token: ...
+ * @param hostname - Matched against each login's name and URL host.
+ * @returns {string | null} The first matching login's token, or null.
+ */
+function readTeaConfig(hostname: string): string | null {
+  const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
+  const loginsSection = getYamlMappingSection(content, "logins");
+  if (!loginsSection) return null;
+
+  for (const entry of parseYamlListEntries(loginsSection)) {
+    if (!entry.token) continue;
+    const urlHostname = entry.url ? hostnameOfUrl(entry.url) : null;
+    if (entry.name === hostname || urlHostname === hostname) return entry.token;
+  }
+  return null;
+}
+
+// --- Helpers ---
+
+function configDir(): string {
+  return process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+}
+
+function ghConfigDir(): string {
+  return process.env.GH_CONFIG_DIR || join(configDir(), "gh");
+}
+
+function hostnameOfUrl(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * The CLI configs are small and regular, so a few line rules read them without
+ * a YAML dependency. They cover the shapes documented above, not YAML at large.
+ */
+
+const MAPPING_KEY = /^(\s*)([^:#][^:]*)\s*:\s*(?:#.*)?$/;
+const FIELD = /^\s*([A-Za-z0-9_]+)\s*:\s*(.+?)\s*$/;
+
+function getYamlMappingSection(content: string, key: string): string | null {
+  const lines = content.split(/\r?\n/);
+  for (const [index, line] of lines.entries()) {
+    const match = MAPPING_KEY.exec(line);
+    const indent = match?.[1]?.length;
+    const matchedKey = match?.[2];
+    if (indent === undefined || matchedKey === undefined) continue;
+    if (stripQuotes(matchedKey.trim()) === key) return childLines(lines, index, indent);
+  }
+  return null;
+}
+
+/**
+ * Collect the lines below `parent` indented deeper than it, blank lines included.
+ * @param lines - Every line of the document.
+ * @param parent - Index of the key line.
+ * @param indent - Indentation of the key line.
+ * @returns {string} The child lines joined back into one section.
+ */
+function childLines(lines: readonly string[], parent: number, indent: number): string {
+  const children: string[] = [];
+  for (const line of lines.slice(parent + 1)) {
+    if (line.trim() && (/^\s*/.exec(line)?.[0].length ?? 0) <= indent) break;
+    children.push(line);
+  }
+  return children.join("\n");
+}
+
+function extractYamlField(section: string, field: string): string | null {
+  for (const line of section.split(/\r?\n/)) {
+    const match = FIELD.exec(line);
+    const rawValue = match?.[2];
+    if (match?.[1] !== field || rawValue === undefined) continue;
+    return parseYamlScalar(rawValue);
+  }
+  return null;
+}
+
+function parseYamlListEntries(section: string): Array<Record<string, string>> {
+  const entries: Array<Record<string, string>> = [];
+  let current: Record<string, string> | null = null;
+
+  for (const line of section.split(/\r?\n/)) {
+    const itemMatch = /^\s*-\s*(.*)$/.exec(line);
+    if (itemMatch) {
+      current = {};
+      entries.push(current);
+    }
+    const field = fieldOf(itemMatch ? (itemMatch[1] ?? "") : line);
+    if (current && field) current[field[0]] = field[1];
+  }
+
+  return entries;
+}
+
+/**
+ * Split a `key: value` line.
+ * @param line - One line of a list entry, without its `- ` marker.
+ * @returns {[string, string] | undefined} The key and its scalar value, or undefined for any other line.
+ */
+function fieldOf(line: string): [string, string] | undefined {
+  const match = FIELD.exec(line);
+  const key = match?.[1];
+  const rawValue = match?.[2];
+  return key === undefined || rawValue === undefined
+    ? undefined
+    : [key, parseYamlScalar(rawValue) ?? ""];
+}
+
+function parseYamlScalar(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value.split(/\s+#/)[0]?.trim() || null;
+}
+
+function stripQuotes(raw: string): string {
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}

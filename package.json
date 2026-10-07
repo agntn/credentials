@@ -1,0 +1,78 @@
+{
+  "name": "@agntn/credentials",
+  "version": "0.0.0",
+  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea and Cloudflare.",
+  "keywords": [
+    "agents",
+    "cloudflare",
+    "credentials",
+    "gitea",
+    "github",
+    "gitlab",
+    "token"
+  ],
+  "homepage": "https://github.com/agntn/credentials#readme",
+  "bugs": "https://github.com/agntn/credentials/issues",
+  "license": "MIT",
+  "author": "oritwoen (https://github.com/oritwoen)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agntn/credentials.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare.d.mts",
+      "import": "./dist/cloudflare.mjs"
+    },
+    "./gitea": {
+      "types": "./dist/gitea.d.mts",
+      "import": "./dist/gitea.mjs"
+    },
+    "./github": {
+      "types": "./dist/github.d.mts",
+      "import": "./dist/github.mjs"
+    },
+    "./gitlab": {
+      "types": "./dist/gitlab.d.mts",
+      "import": "./dist/gitlab.mjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "obuild",
+    "dev": "obuild --stub",
+    "lint": "pnpm build && vp lint && vp fmt --check",
+    "fmt": "pnpm build && vp lint --fix && vp fmt",
+    "typecheck": "tsc --noEmit --skipLibCheck && tsc -p test/tsconfig.json",
+    "test": "vp test run",
+    "test:watch": "vp test watch",
+    "prepack": "pnpm run build",
+    "release": "pnpm build && pnpm test && changelogen --release --push"
+  },
+  "devDependencies": {
+    "@agntn/ox": "0.1.0",
+    "@types/node": "26.2.0",
+    "changelogen": "0.6.2",
+    "obuild": "0.4.43",
+    "typescript": "7.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "packageManager": "pnpm@12.10.1"
+}
