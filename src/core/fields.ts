@@ -18,3 +18,21 @@ export function epoch(value: unknown): number | undefined {
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? undefined : parsed;
 }
+
+/**
+ * Tell a plain object from everything else.
+ * @param value - Parsed JSON or CLI output.
+ * @returns {value is Record<string, unknown>} Whether it can be read by key.
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Read a non-empty string.
+ * @param value - Anything a service or CLI printed.
+ * @returns {string | undefined} The string, or undefined.
+ */
+export function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}

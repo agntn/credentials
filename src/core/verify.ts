@@ -6,17 +6,14 @@
  * the credential's own host.
  */
 
-import type { CredentialState } from "./types.ts";
+import { isRecord, nonEmptyString } from "./fields.ts";
 
 const VERIFY_TIMEOUT_MS = 10_000;
 
-export interface Probe {
-  readonly state: CredentialState;
-  readonly status?: number;
-  readonly headers?: Headers;
-  readonly body?: unknown;
-  readonly note?: string;
-}
+/** An accepted token comes with the parts a caller reads; a refused or failed one with a reason. */
+export type Probe =
+  | { readonly state: "valid"; readonly headers: Headers; readonly body: unknown }
+  | { readonly state: "rejected" | "unreachable"; readonly note: string };
 
 /**
  * Send one authenticated GET and classify the answer.
@@ -44,19 +41,11 @@ export async function probe(
   } catch (error) {
     return { state: "unreachable", note: reasonOf(error) };
   }
+  const note = `HTTP ${response.status}`;
+  if (refusals.includes(response.status)) return { state: "rejected", note };
+  if (!response.ok) return { state: "unreachable", note };
   const body: unknown = await response.json().catch(() => undefined);
-  if (response.ok)
-    return { state: "valid", status: response.status, headers: response.headers, body };
-  if (refusals.includes(response.status)) {
-    return {
-      state: "rejected",
-      status: response.status,
-      headers: response.headers,
-      body,
-      note: `HTTP ${response.status}`,
-    };
-  }
-  return { state: "unreachable", status: response.status, note: `HTTP ${response.status}` };
+  return { state: "valid", headers: response.headers, body };
 }
 
 /**
@@ -76,7 +65,5 @@ function reasonOf(error: unknown): string {
  * @returns {string | undefined} The value when it is a non-empty string.
  */
 export function field(body: unknown, key: string): string | undefined {
-  if (typeof body !== "object" || body === null) return undefined;
-  const value: unknown = (body as Record<string, unknown>)[key];
-  return typeof value === "string" && value !== "" ? value : undefined;
+  return isRecord(body) ? nonEmptyString(body[key]) : undefined;
 }

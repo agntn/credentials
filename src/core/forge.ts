@@ -96,14 +96,7 @@ function fromLogin(forge: Forge, hostname: string, account?: string): ForgeCrede
 }
 
 function hostnameOf(forge: Forge, baseURL?: string): string {
-  if (baseURL) {
-    try {
-      return new URL(baseURL).hostname;
-    } catch {
-      // invalid URL, fall through to the default host
-    }
-  }
-  return DEFAULT_HOSTS[forge];
+  return (baseURL && hostnameOfUrl(baseURL)) || DEFAULT_HOSTS[forge];
 }
 
 // --- CLI tools ---
@@ -132,17 +125,25 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
  * of the login asked for, as `glab config get token` prints `GITLAB_TOKEN` for any host.
  * @returns {string | null} The output, or null when the CLI fails or prints nothing.
  */
-export function runCli(
-  command: string,
-  args: readonly string[],
-  hidden: readonly string[] = [],
-): string | null {
+/**
+ * Token variables each CLI reports instead of the login it is asked about:
+ * `glab config get token` prints `GITLAB_TOKEN` for any host. Every run hides them,
+ * so a CLI answer always names a login, and the variables are read on their own.
+ */
+const CLI_TOKEN_VARIABLES: Record<ForgeCli, readonly string[]> = {
+  gh: ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"],
+  glab: ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"],
+};
+
+export type ForgeCli = "gh" | "glab";
+
+export function runCli(command: ForgeCli, args: readonly string[]): string | null {
   try {
     const output = execFileSync(command, args, {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT_MS,
       stdio: ["pipe", "pipe", "pipe"],
-      ...(hidden.length === 0 ? {} : { env: withoutVariables(hidden) }),
+      env: withoutVariables(CLI_TOKEN_VARIABLES[command]),
     });
     return output.trim() || null;
   } catch {
@@ -155,7 +156,7 @@ export function runCli(
  * @param names - The variables to drop.
  * @returns {NodeJS.ProcessEnv} The copy.
  */
-function withoutVariables(names: readonly string[]): NodeJS.ProcessEnv {
+export function withoutVariables(names: readonly string[]): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of names) delete env[name];
   return env;
@@ -272,16 +273,37 @@ export function hostnameOfUrl(url: string): string | null {
  * a YAML dependency. They cover the shapes documented above, not YAML at large.
  */
 
+/**
+ * Measure a line's indentation.
+ * @param line - One line.
+ * @returns {number} Its leading whitespace length.
+ */
+function indentOf(line: string): number {
+  return /^\s*/.exec(line)?.[0].length ?? 0;
+}
+
+/**
+ * Find the indentation of a section's own keys: the shallowest non-blank line. Lookups
+ * stay at that depth, so a key nested inside another never answers for it.
+ * @param lines - The section's lines.
+ * @returns {number} The indentation, or 0 for an empty section.
+ */
+function topIndent(lines: readonly string[]): number {
+  const indents = lines.filter((line) => line.trim() !== "").map(indentOf);
+  return indents.length === 0 ? 0 : Math.min(...indents);
+}
+
 const MAPPING_KEY = /^(\s*)([^:#][^:]*)\s*:\s*(?:#.*)?$/;
 const FIELD = /^\s*([A-Za-z0-9_]+)\s*:\s*(.+?)\s*$/;
 
 export function getYamlMappingSection(content: string, key: string): string | null {
   const lines = content.split(/\r?\n/);
+  const top = topIndent(lines);
   for (const [index, line] of lines.entries()) {
     const match = MAPPING_KEY.exec(line);
     const indent = match?.[1]?.length;
     const matchedKey = match?.[2];
-    if (indent === undefined || matchedKey === undefined) continue;
+    if (indent !== top || matchedKey === undefined) continue;
     if (stripQuotes(matchedKey.trim()) === key) return childLines(lines, index, indent);
   }
   return null;
@@ -327,10 +349,10 @@ export function childKeys(section: string): string[] {
  * @returns {string | null} Its scalar value, or null when the section has no such field.
  */
 export function extractYamlField(section: string, field: string): string | null {
-  const lines = section.split(/\r?\n/).filter((line) => line.trim() !== "");
-  const indent = Math.min(...lines.map((line) => /^\s*/.exec(line)?.[0].length ?? 0));
+  const lines = section.split(/\r?\n/);
+  const top = topIndent(lines);
   for (const line of lines) {
-    if ((/^\s*/.exec(line)?.[0].length ?? 0) !== indent) continue;
+    if (indentOf(line) !== top) continue;
     const match = FIELD.exec(line);
     const rawValue = match?.[2];
     if (match?.[1] !== field || rawValue === undefined) continue;
@@ -373,12 +395,8 @@ function fieldOf(line: string): [string, string] | undefined {
 function parseYamlScalar(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
+  const unquoted = stripQuotes(value);
+  if (unquoted !== value) return unquoted;
   return value.split(/\s+#/)[0]?.trim() || null;
 }
 

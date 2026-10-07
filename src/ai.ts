@@ -2,15 +2,12 @@
 
 import { toAiTool, type AiToolOutput } from "@agntn/tools/ai";
 import type { Tool } from "ai";
-import type { Service } from "./core/types.ts";
+import type { Static } from "@agntn/tools";
 import type { ListDetails } from "./tool-operations.ts";
 import { listTool } from "./tools.ts";
 
 /** The arguments the model sends, as the schema types them. */
-export interface ListArguments {
-  service?: Service;
-  verify?: boolean;
-}
+export type ListArguments = Static<typeof listTool.input>;
 
 export const credentialsListTool: Tool<ListArguments, AiToolOutput<ListDetails>> = toAiTool(
   listTool,

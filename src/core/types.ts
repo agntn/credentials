@@ -1,8 +1,11 @@
 /** Where a credential came from, in the order every resolver tries them. */
 export type CredentialSource = "explicit" | "env" | "cli" | "config";
 
+/** The services this package finds credentials for, in the order every surface lists them. */
+export const SERVICES = ["github", "gitlab", "gitea", "cloudflare"] as const;
+
 /** A service this package finds credentials for. */
-export type Service = "github" | "gitlab" | "gitea" | "cloudflare";
+export type Service = (typeof SERVICES)[number];
 
 /**
  * What is known about a credential without showing it.

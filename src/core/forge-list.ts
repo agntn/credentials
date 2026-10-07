@@ -24,18 +24,6 @@ import { compact, epoch } from "./fields.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
 import { field, type Probe, probe } from "./verify.ts";
 
-/**
- * Token variables each CLI would report instead of the login `list` asks about. They are
- * listed on their own, so the CLI runs without them.
- */
-const GH_TOKEN_VARIABLES = [
-  "GH_TOKEN",
-  "GITHUB_TOKEN",
-  "GH_ENTERPRISE_TOKEN",
-  "GITHUB_ENTERPRISE_TOKEN",
-];
-const GLAB_TOKEN_VARIABLES = ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"];
-
 /** A credential with the token `list` needs to verify it. Never leaves this module. */
 interface Candidate {
   readonly info: CredentialInfo;
@@ -141,11 +129,7 @@ function ghLogins(envWins: boolean): Candidate[] {
     const users = getYamlMappingSection(section, "users");
     const logins = users === null ? [activeUser].filter((user) => user !== null) : childKeys(users);
     return logins.map((user): Candidate => {
-      const fromCli = runCli(
-        "gh",
-        ["auth", "token", `--hostname=${host}`, `--user=${user}`],
-        GH_TOKEN_VARIABLES,
-      );
+      const fromCli = runCli("gh", ["auth", "token", `--hostname=${host}`, `--user=${user}`]);
       const userSection = users === null ? section : getYamlMappingSection(users, user);
       const fromFile = userSection === null ? null : extractYamlField(userSection, "oauth_token");
       const token = fromCli ?? fromFile;
@@ -187,8 +171,7 @@ function glabLogins(envWins: boolean): Candidate[] {
  */
 function glabLogin(host: string, section: string, envWins: boolean): Candidate | undefined {
   const fromFile = extractYamlField(section, "token");
-  const token =
-    fromFile ?? runCli("glab", ["config", "get", "token", `--host=${host}`], GLAB_TOKEN_VARIABLES);
+  const token = fromFile ?? runCli("glab", ["config", "get", "token", `--host=${host}`]);
   if (token === null) return undefined;
   const protocol = extractYamlField(section, "api_protocol") ?? "https";
   const apiHost = extractYamlField(section, "api_host") ?? host;
@@ -214,15 +197,19 @@ function teaLogins(envWins: boolean): Candidate[] {
   const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
   const logins = getYamlMappingSection(content, "logins");
   if (logins === null) return [];
+  // resolve takes the first login for a host, so only that one is active.
+  const seen = new Set<string>();
   return parseYamlListEntries(logins).flatMap((entry) => {
     const host = entry.url ? hostnameOfUrl(entry.url) : null;
     if (!entry.token || !entry.url || host === null) return [];
+    const first = !seen.has(host);
+    seen.add(host);
     return [
       loginCandidate({
         forge: "gitea",
         host,
         account: entry.user || undefined,
-        active: !envWins,
+        active: !envWins && first,
         found: "config",
         origin: "tea config.yml",
         token: entry.token,
@@ -309,7 +296,7 @@ async function verifyCandidate(forge: Forge, candidate: Candidate): Promise<Cred
  */
 function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
   if (answer.state !== "valid") return { state: answer.state, note: answer.note };
-  const scopes = answer.headers?.get("x-oauth-scopes") ?? "";
+  const scopes = answer.headers.get("x-oauth-scopes") ?? "";
   return {
     state: "valid",
     account:
@@ -321,6 +308,6 @@ function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
             .split(",")
             .map((scope) => scope.trim())
             .filter(Boolean),
-    expiresAt: epoch(answer.headers?.get("github-authentication-token-expiration")),
+    expiresAt: epoch(answer.headers.get("github-authentication-token-expiration")),
   };
 }

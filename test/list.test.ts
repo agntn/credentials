@@ -315,6 +315,17 @@ describe("gitea.list", () => {
   });
 });
 
+describe("gitea.list active login", () => {
+  it("marks only the first login for a host active, as resolve takes the first", async () => {
+    writeConfig(
+      "tea/config.yml",
+      "logins:\n  - name: a\n    url: https://git.home.example\n    token: tea-a\n  - name: b\n    url: https://git.home.example\n    token: tea-b\n",
+    );
+
+    expect((await gitea()).map((entry) => entry.active)).toEqual([true, false]);
+  });
+});
+
 describe("listCredentials", () => {
   it("keeps every token out of the text and the details", async () => {
     vi.stubEnv("GH_TOKEN", "ghp_never_shown");

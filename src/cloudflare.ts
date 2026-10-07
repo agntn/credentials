@@ -9,7 +9,8 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { CredentialsError } from "./core/errors.ts";
-import { compact, epoch } from "./core/fields.ts";
+import { compact, epoch, isRecord, nonEmptyString } from "./core/fields.ts";
+import { withoutVariables } from "./core/forge.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./core/types.ts";
 import { type Probe, probe } from "./core/verify.ts";
 
@@ -161,12 +162,11 @@ function getCfSession(refresh: boolean): Promise<CfSession> {
 async function loadCfSession(): Promise<CfSession> {
   const status = await cfStatus();
   const stored = await readCfToken(status.authSource);
-  const expiry =
-    typeof stored.expiration_time === "string" ? Date.parse(stored.expiration_time) : Number.NaN;
+  const expiresAt = epoch(stored.expiration_time);
   return {
     accountIds: accountIds(status.accounts),
     token: stored.oauth_token,
-    ...(Number.isNaN(expiry) ? {} : { expiresAt: expiry }),
+    ...(expiresAt === undefined ? {} : { expiresAt }),
   };
 }
 
@@ -188,8 +188,7 @@ async function cfStatus(): Promise<Record<string, unknown>> {
  * @returns {Promise<string>} The JSON status cf prints.
  */
 async function cfWhoami(): Promise<string> {
-  const env = { ...process.env };
-  delete env.CLOUDFLARE_API_TOKEN;
+  const env = withoutVariables(["CLOUDFLARE_API_TOKEN"]);
   try {
     return await new Promise((resolveOutput, reject) => {
       execFile("cf", ["auth", "whoami"], { env, timeout: CF_TIMEOUT_MS }, (error, stdout) => {
@@ -268,10 +267,6 @@ function parseJson(text: string, failure: string): unknown {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
 const API_HOST = "api.cloudflare.com";
 const API_BASE = `https://${API_HOST}/client/v4`;
 
@@ -288,13 +283,11 @@ const API_BASE = `https://${API_HOST}/client/v4`;
 export async function list(options?: ListOptions): Promise<CredentialInfo[]> {
   const account = accountSetting();
   const envToken = envValue("CLOUDFLARE_API_TOKEN");
-  const entries: CredentialInfo[] = [];
-  if (envToken !== undefined) {
-    entries.push(await envEntry(envToken, account, options?.verify === true));
-  }
-  const session = await sessionEntry(account, envToken === undefined);
-  if (session !== undefined) entries.push(session);
-  return entries;
+  const [fromEnv, session] = await Promise.all([
+    envToken === undefined ? undefined : envEntry(envToken, account, options?.verify === true),
+    sessionEntry(account, envToken === undefined),
+  ]);
+  return [fromEnv, session].filter((entry) => entry !== undefined);
 }
 
 /**
@@ -391,15 +384,6 @@ async function sessionEntry(
         ? `the session reaches ${ids.length} accounts and none is chosen`
         : undefined,
   });
-}
-
-/**
- * Read a non-empty string.
- * @param value - Anything cf printed.
- * @returns {string | undefined} The string, or undefined.
- */
-function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 /**

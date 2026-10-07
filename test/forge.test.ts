@@ -400,3 +400,24 @@ describe("gh account argument", () => {
     ]);
   });
 });
+
+describe("CLI token variables", () => {
+  it("runs glab without the variables it would print instead of a login", async () => {
+    vi.resetAllMocks();
+    for (const key of ["GITLAB_TOKEN", "GL_TOKEN", "GITLAB_PAT"]) delete process.env[key];
+    process.env.OAUTH_TOKEN = "oauth-env";
+    process.env.GITLAB_ACCESS_TOKEN = "access-env";
+    vi.mocked(execFileSync).mockReturnValueOnce("glpat-login\n");
+    try {
+      const { resolve } = await import("../src/gitlab.ts");
+
+      expect(resolve()).toEqual({ token: "glpat-login", source: "cli" });
+      const options = vi.mocked(execFileSync).mock.calls[0]?.[2] as { env?: NodeJS.ProcessEnv };
+      expect(options.env).not.toHaveProperty("OAUTH_TOKEN");
+      expect(options.env).not.toHaveProperty("GITLAB_ACCESS_TOKEN");
+    } finally {
+      delete process.env.OAUTH_TOKEN;
+      delete process.env.GITLAB_ACCESS_TOKEN;
+    }
+  });
+});

@@ -15,8 +15,6 @@ import { list as listGithub } from "./github.ts";
 import { list as listGitlab } from "./gitlab.ts";
 import { SERVICES } from "./tool-contract.ts";
 
-export type { CredentialInfo };
-
 /**
  * Text for the model plus details for the harness, shared by every tool surface.
  * A failure throws instead: Pi records every returned value as a successful call.
@@ -26,7 +24,7 @@ export interface ToolResult<Details> {
   details: Details;
 }
 
-export interface ListInput {
+interface ListInput {
   readonly service?: string;
   readonly verify?: boolean;
 }
@@ -72,7 +70,13 @@ export async function listCredentials(input: ListInput): Promise<ToolResult<List
   const services = selectedServices(input.service);
   const verify = flag(input.verify, "verify");
   const now = Date.now();
-  const found = await Promise.all(services.map((service) => LISTERS[service]({ verify })));
+  // The forge listers run their CLIs synchronously, so cf, which waits on the network, starts first.
+  const started = new Map(
+    [...services]
+      .sort((a, b) => Number(b === "cloudflare") - Number(a === "cloudflare"))
+      .map((service) => [service, LISTERS[service]({ verify })] as const),
+  );
+  const found = await Promise.all(services.map((service) => started.get(service)!));
   const credentials = found.flat();
 
   const lines = [heading(credentials.length, verify)];
@@ -108,7 +112,7 @@ function selectedServices(service: unknown): Service[] {
     return [service as Service];
   }
   throw new ToolInputError([
-    `Unknown service ${JSON.stringify(sanitizeLine(typeof service === "string" ? service : (JSON.stringify(service) ?? "undefined")))}: use one of ${SERVICES.join(", ")}`,
+    `Unknown service ${JSON.stringify(sanitizeLine(service))}: use one of ${SERVICES.join(", ")}`,
   ]);
 }
 
