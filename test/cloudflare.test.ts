@@ -256,3 +256,118 @@ describe("cloudflare.resolve", () => {
     expect(messages(error)).not.toContain("SECRET");
   });
 });
+
+describe("cloudflare.list", () => {
+  function sessionStatus(accounts: string[]): Record<string, unknown> {
+    return {
+      ...loggedIn(accounts),
+      email: "dev@example.com",
+      scopes: ["account:read", "workers:write"],
+      expiresAt: "2026-09-30T09:00:00.000Z",
+    };
+  }
+
+  it("describes the cf session with its login, expiry, scopes and single account", async () => {
+    cf.whoami = sessionStatus(["acct-1"]);
+    const { list } = await load();
+
+    expect(await list()).toEqual([
+      {
+        service: "cloudflare",
+        host: "api.cloudflare.com",
+        source: "cli",
+        origin: "cf",
+        active: true,
+        state: "valid",
+        account: "dev@example.com",
+        accountId: "acct-1",
+        accountIdOrigin: "cf session",
+        scopes: ["account:read", "workers:write"],
+        expiresAt: Date.parse("2026-09-30T09:00:00.000Z"),
+      },
+    ]);
+  });
+
+  it("says no account is chosen when the session reaches several", async () => {
+    cf.whoami = sessionStatus(["acct-1", "acct-2"]);
+    const { list } = await load();
+
+    expect(await list()).toMatchObject([
+      { note: "the session reaches 2 accounts and none is chosen" },
+    ]);
+  });
+
+  it("puts the env token first, makes it win and checks it with Cloudflare", async () => {
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "cf-env-secret");
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "acct-9");
+    cf.whoami = sessionStatus(["acct-1"]);
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        urls.push(url);
+        return url.includes("/user/")
+          ? new Response(JSON.stringify({ success: false }), { status: 401 })
+          : new Response(
+              JSON.stringify({ result: { status: "active", expires_on: "2026-12-31T00:00:00Z" } }),
+            );
+      }),
+    );
+    const { list } = await load();
+
+    const entries = await list({ verify: true });
+
+    expect(entries).toMatchObject([
+      {
+        origin: "CLOUDFLARE_API_TOKEN",
+        active: true,
+        state: "valid",
+        accountId: "acct-9",
+        accountIdOrigin: "CLOUDFLARE_ACCOUNT_ID",
+        expiresAt: Date.parse("2026-12-31T00:00:00Z"),
+      },
+      { origin: "cf", active: false, accountId: "acct-9" },
+    ]);
+    expect(urls).toEqual([
+      "https://api.cloudflare.com/client/v4/user/tokens/verify",
+      "https://api.cloudflare.com/client/v4/accounts/acct-9/tokens/verify",
+    ]);
+    expect(JSON.stringify(entries)).not.toContain("cf-env-secret");
+    vi.unstubAllGlobals();
+  });
+
+  it("calls a malformed env token rejected", async () => {
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "bogus");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 400 })),
+    );
+    const { list } = await load();
+
+    expect((await list({ verify: true }))[0]).toMatchObject({
+      state: "rejected",
+      note: "HTTP 400",
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("lists only the env token when cf is not installed", async () => {
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "cf-env");
+    vi.mocked(execFile).mockImplementation(((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: Error) => void;
+      queueMicrotask(() =>
+        callback(Object.assign(new Error("spawn cf ENOENT"), { code: "ENOENT" })),
+      );
+    }) as unknown as typeof execFile);
+    const { list } = await load();
+
+    expect(await list()).toMatchObject([
+      {
+        origin: "CLOUDFLARE_API_TOKEN",
+        note: "no account id is set, so resolve refuses this token",
+      },
+    ]);
+  });
+});

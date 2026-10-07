@@ -14,9 +14,9 @@ describe("@agntn/credentials", () => {
     expect(Object.keys(root).sort()).toEqual(["CredentialsError", "version"]);
   });
 
-  it("gives every service subpath a single resolve", () => {
+  it("gives every service subpath resolve and list", () => {
     for (const service of [cloudflare, gitea, github, gitlab]) {
-      expect(Object.keys(service)).toEqual(["resolve"]);
+      expect(Object.keys(service).sort()).toEqual(["list", "resolve"]);
     }
   });
 });

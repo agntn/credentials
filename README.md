@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Four services, one `resolve` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Four services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -19,6 +19,8 @@ Every package that talks to GitHub or Cloudflare ends up with its own token hunt
 - 🏠 **Self-hosted hosts.** Pass a `baseURL` and the CLI login for that host is used.
 - ☁️ **Cloudflare without an API token.** The `cf` OAuth session is enough. It's read again once it expires.
 - 🏷️ **Source on every result.** `explicit`, `env`, `cli` or `config`. Handy when the wrong token wins.
+- 🔍 **See what's there.** `list` shows every credential, which one wins and whether it still works.
+- 📬 **Checks stay home.** `verify` sends a token only to the host it belongs to.
 - 🤐 **Quiet errors.** No token, file content or CLI output ever lands in a message.
 
 ## 📦 Install
@@ -28,6 +30,35 @@ pnpm add @agntn/credentials
 ```
 
 ## 🚀 First call
+
+```bash
+npx @agntn/credentials list --verify
+```
+
+```
+2 credentials, checked with each service. * marks the one resolve uses for its host. Tokens are never shown.
+github
+  * github.com | unknown account | GH_TOKEN (env) | rejected | HTTP 401
+gitlab: nothing found (set GITLAB_TOKEN or run glab auth login)
+gitea
+  * any | unknown account | GITEA_TOKEN (env) | unchecked | GITEA_TOKEN names no host, so it is never sent anywhere to check
+cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
+```
+
+That `GH_TOKEN` is long dead, and GitHub said so. It also wins over any `gh` login. `gh` works and your tool gets 401? Look there first. `GITEA_TOKEN` never left the machine. Nothing tells it which host it's for.
+
+Want plain `credentials` instead of `npx`? `pnpm add -g @agntn/credentials` once.
+
+### Commands
+
+| Command | What it does                                   |
+| ------- | ---------------------------------------------- |
+| `list`  | Every credential, its source, state and expiry |
+| `mcp`   | Run the MCP server over stdio                  |
+
+`list github` narrows it to one service. `--verify` asks the services, `--json` prints the full records.
+
+## 🧠 Library
 
 ```ts
 import { resolve as github } from "@agntn/credentials/github";
@@ -46,6 +77,8 @@ cli 2026-10-07T18:25:49.939Z
 
 Both came from the CLIs. No env, no config. The Cloudflare token is cached until a minute before that timestamp. Then `cf` gets asked again.
 
+`list({ verify: true })` sits next to every `resolve`. It returns what the CLI prints, as records. No token in them, ever.
+
 ## 🗺️ Services
 
 | Subpath                         | Env                                      | CLI and config                                 |
@@ -61,9 +94,26 @@ Cloudflare also needs an account. It takes `accountId`, then `AGNTN_CLOUDFLARE_A
 
 Everything else lives in the types: [`src/core/forge.ts`](./src/core/forge.ts) and [`src/cloudflare.ts`](./src/cloudflare.ts).
 
+## 🤖 Agents
+
+```bash
+pi install npm:@agntn/credentials
+omp install @agntn/credentials
+```
+
+```json
+{
+  "mcpServers": {
+    "credentials": { "command": "npx", "args": ["-y", "@agntn/credentials", "mcp"] }
+  }
+}
+```
+
+One tool, `credentials_list`, the same in MCP, Pi, OMP and the AI SDK (`@agntn/credentials/ai`). It takes `service` and `verify`. No host, so a model can't point your token somewhere else. A tool that returns tokens doesn't exist here, and won't.
+
 ## 🚫 What this does not do
 
-It never logs you in. It never writes a token anywhere. It only finds what's already there. There's no CLI and no MCP tool either. A tool that hands a token to a model is a leak.
+It never logs you in. It never writes a token anywhere. It only finds what's already there.
 
 ## 🛠️ Development
 

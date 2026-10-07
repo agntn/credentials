@@ -9,7 +9,9 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { CredentialsError } from "./core/errors.ts";
-import type { CredentialSource } from "./core/types.ts";
+import { compact, epoch } from "./core/fields.ts";
+import type { CredentialInfo, CredentialSource, ListOptions } from "./core/types.ts";
+import { type Probe, probe } from "./core/verify.ts";
 
 export interface CloudflareCredential {
   readonly token: string;
@@ -32,6 +34,12 @@ export interface CloudflareOptions {
   readonly refresh?: boolean;
 }
 
+/** An account id and the setting it came from. */
+interface AccountSetting {
+  readonly id: string;
+  readonly origin: string;
+}
+
 interface CfSession {
   readonly accountIds: readonly string[];
   readonly token: string;
@@ -41,6 +49,8 @@ interface CfSession {
 const SERVICE = "cloudflare";
 const CF_OAUTH_SOURCE = "OAuth token from ";
 const CF_TIMEOUT_MS = 30_000;
+/** `tokens/verify` answers a malformed token with 400, not 401. */
+const TOKEN_REFUSALS = [400, 401, 403];
 /** A token this close to expiry is fetched again, so it outlives the request it is for. */
 const EXPIRY_MARGIN_MS = 60_000;
 const SETUP_HINT =
@@ -80,11 +90,22 @@ export async function resolve(options?: CloudflareOptions): Promise<CloudflareCr
 }
 
 function configuredAccount(options?: CloudflareOptions): string | undefined {
-  return (
-    nonEmpty(options?.accountId) ??
-    envValue("AGNTN_CLOUDFLARE_ACCOUNT_ID") ??
-    envValue("CLOUDFLARE_ACCOUNT_ID")
-  );
+  return accountSetting(options)?.id;
+}
+
+/**
+ * Find the account id the caller or the environment sets, and where it came from.
+ * @param options - The caller's options.
+ * @returns {{ id: string; origin: string } | undefined} The id and its origin, or undefined.
+ */
+function accountSetting(options?: CloudflareOptions): AccountSetting | undefined {
+  const explicit = nonEmpty(options?.accountId);
+  if (explicit !== undefined) return { id: explicit, origin: "accountId" };
+  for (const name of ["AGNTN_CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID"]) {
+    const id = envValue(name);
+    if (id !== undefined) return { id, origin: name };
+  }
+  return undefined;
 }
 
 /**
@@ -138,10 +159,7 @@ function getCfSession(refresh: boolean): Promise<CfSession> {
  * @returns {Promise<CfSession>} The token, its expiry and the accounts it reaches.
  */
 async function loadCfSession(): Promise<CfSession> {
-  const status = parseJson(await cfWhoami(), "cf auth whoami did not print JSON");
-  if (!isRecord(status) || status.authenticated !== true) {
-    throw cfFailure("cf CLI is not logged in");
-  }
+  const status = await cfStatus();
   const stored = await readCfToken(status.authSource);
   const expiry =
     typeof stored.expiration_time === "string" ? Date.parse(stored.expiration_time) : Number.NaN;
@@ -150,6 +168,19 @@ async function loadCfSession(): Promise<CfSession> {
     token: stored.oauth_token,
     ...(Number.isNaN(expiry) ? {} : { expiresAt: expiry }),
   };
+}
+
+/**
+ * Read cf's status for a logged in session.
+ * @returns {Promise<Record<string, unknown>>} The status cf printed.
+ * @throws {CredentialsError} When cf is missing, fails or is not logged in.
+ */
+async function cfStatus(): Promise<Record<string, unknown>> {
+  const status = parseJson(await cfWhoami(), "cf auth whoami did not print JSON");
+  if (!isRecord(status) || status.authenticated !== true) {
+    throw cfFailure("cf CLI is not logged in");
+  }
+  return status;
 }
 
 /**
@@ -239,4 +270,154 @@ function parseJson(text: string, failure: string): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+const API_HOST = "api.cloudflare.com";
+const API_BASE = `https://${API_HOST}/client/v4`;
+
+/**
+ * Describe every Cloudflare credential this machine holds, without the tokens.
+ *
+ * Lists `CLOUDFLARE_API_TOKEN` and the cf OAuth session, and names the account
+ * `resolve` would act on for each. Running cf reaches the network, so the session's
+ * state comes from cf whether or not `verify` is on. `verify` checks the env token
+ * against `/user/tokens/verify`.
+ * @param options - Whether to ask Cloudflare about the env token.
+ * @returns {Promise<CredentialInfo[]>} The env token first, then the cf session.
+ */
+export async function list(options?: ListOptions): Promise<CredentialInfo[]> {
+  const account = accountSetting();
+  const envToken = envValue("CLOUDFLARE_API_TOKEN");
+  const entries: CredentialInfo[] = [];
+  if (envToken !== undefined) {
+    entries.push(await envEntry(envToken, account, options?.verify === true));
+  }
+  const session = await sessionEntry(account, envToken === undefined);
+  if (session !== undefined) entries.push(session);
+  return entries;
+}
+
+/**
+ * Describe `CLOUDFLARE_API_TOKEN`, asking Cloudflare about it when told to.
+ * @param token - The env token, which never leaves this function except toward Cloudflare.
+ * @param account - The configured account, if any.
+ * @param verify - Whether to ask Cloudflare.
+ * @returns {Promise<CredentialInfo>} The entry.
+ */
+async function envEntry(
+  token: string,
+  account: AccountSetting | undefined,
+  verify: boolean,
+): Promise<CredentialInfo> {
+  const base = compact<CredentialInfo>({
+    service: SERVICE,
+    host: API_HOST,
+    source: "env",
+    origin: "CLOUDFLARE_API_TOKEN",
+    active: true,
+    state: "unchecked",
+    accountId: account?.id,
+    accountIdOrigin: account?.origin,
+    note: account === undefined ? "no account id is set, so resolve refuses this token" : undefined,
+  });
+  if (!verify) return base;
+  let answer = await probe(`${API_BASE}/user/tokens/verify`, `Bearer ${token}`, TOKEN_REFUSALS);
+  // An account-owned token is unknown to the user endpoint.
+  if (answer.state === "rejected" && account !== undefined) {
+    answer = await probe(
+      `${API_BASE}/accounts/${encodeURIComponent(account.id)}/tokens/verify`,
+      `Bearer ${token}`,
+      TOKEN_REFUSALS,
+    );
+  }
+  return compact({ ...base, ...tokenFacts(answer) });
+}
+
+/**
+ * Read the token status and expiry out of a `tokens/verify` answer.
+ * @param answer - The probe result.
+ * @returns {Partial<CredentialInfo>} The fields to merge into the entry.
+ */
+function tokenFacts(answer: Probe): Partial<CredentialInfo> {
+  if (answer.state !== "valid") return { state: answer.state, note: answer.note };
+  const result = isRecord(answer.body) && isRecord(answer.body.result) ? answer.body.result : {};
+  const status = typeof result.status === "string" ? result.status : "unknown";
+  return {
+    state: TOKEN_STATES[status] ?? "rejected",
+    note: status === "active" ? undefined : `token status ${status}`,
+    expiresAt: epoch(result.expires_on),
+  };
+}
+
+/** What each `tokens/verify` status means; anything else counts as refused. */
+const TOKEN_STATES: Readonly<Record<string, CredentialInfo["state"]>> = {
+  active: "valid",
+  expired: "expired",
+};
+
+/**
+ * Describe the cf OAuth session, or nothing when cf has none.
+ * @param account - The configured account, if any.
+ * @param active - Whether no env token wins over the session.
+ * @returns {Promise<CredentialInfo | undefined>} The entry, or undefined without a session.
+ */
+async function sessionEntry(
+  account: AccountSetting | undefined,
+  active: boolean,
+): Promise<CredentialInfo | undefined> {
+  let status: Record<string, unknown>;
+  try {
+    status = await cfStatus();
+  } catch {
+    return undefined;
+  }
+  const ids = accountIds(status.accounts);
+  const expiresAt = epoch(status.expiresAt);
+  const target = account ?? (ids.length === 1 ? { id: ids[0]!, origin: "cf session" } : undefined);
+  return compact<CredentialInfo>({
+    service: SERVICE,
+    host: API_HOST,
+    source: "cli",
+    origin: "cf",
+    active,
+    state: sessionState(status.tokenValid, expiresAt),
+    account: nonEmptyString(status.email),
+    accountId: target?.id,
+    accountIdOrigin: target?.origin,
+    scopes: strings(status.scopes),
+    expiresAt,
+    note:
+      target === undefined
+        ? `the session reaches ${ids.length} accounts and none is chosen`
+        : undefined,
+  });
+}
+
+/**
+ * Read a non-empty string.
+ * @param value - Anything cf printed.
+ * @returns {string | undefined} The string, or undefined.
+ */
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
+ * Read a list of strings.
+ * @param value - Anything cf printed.
+ * @returns {string[] | undefined} The strings in it, or undefined when it isn't a list.
+ */
+function strings(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string") : undefined;
+}
+
+/**
+ * Judge the cf session from what cf reported.
+ * @param tokenValid - cf's own verdict on its token.
+ * @param expiresAt - The token's expiry, if cf recorded one.
+ * @returns {CredentialInfo["state"]} Expired, valid or rejected.
+ */
+function sessionState(tokenValid: unknown, expiresAt: number | undefined): CredentialInfo["state"] {
+  if (expiresAt !== undefined && expiresAt <= Date.now()) return "expired";
+  return tokenValid === true ? "valid" : "rejected";
 }

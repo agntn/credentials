@@ -34,13 +34,13 @@ export interface ForgeOptions {
   readonly account?: string;
 }
 
-const DEFAULT_HOSTS: Record<Forge, string> = {
+export const DEFAULT_HOSTS: Record<Forge, string> = {
   github: "github.com",
   gitlab: "gitlab.com",
   gitea: "gitea.com",
 };
 
-const ENV_KEYS: Record<Forge, readonly string[]> = {
+export const ENV_KEYS: Record<Forge, readonly string[]> = {
   github: ["GH_TOKEN", "GITHUB_TOKEN"],
   gitlab: ["GITLAB_TOKEN", "GL_TOKEN", "GITLAB_PAT"],
   gitea: ["GITEA_TOKEN"],
@@ -124,7 +124,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
   }
 }
 
-function runCli(command: string, args: readonly string[]): string | null {
+export function runCli(command: string, args: readonly string[]): string | null {
   try {
     const output = execFileSync(command, args, {
       encoding: "utf-8",
@@ -227,15 +227,15 @@ function readTeaConfig(hostname: string): string | null {
 
 // --- Helpers ---
 
-function configDir(): string {
+export function configDir(): string {
   return process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
 }
 
-function ghConfigDir(): string {
+export function ghConfigDir(): string {
   return process.env.GH_CONFIG_DIR || join(configDir(), "gh");
 }
 
-function hostnameOfUrl(url: string): string | null {
+export function hostnameOfUrl(url: string): string | null {
   try {
     return new URL(url).hostname;
   } catch {
@@ -251,7 +251,7 @@ function hostnameOfUrl(url: string): string | null {
 const MAPPING_KEY = /^(\s*)([^:#][^:]*)\s*:\s*(?:#.*)?$/;
 const FIELD = /^\s*([A-Za-z0-9_]+)\s*:\s*(.+?)\s*$/;
 
-function getYamlMappingSection(content: string, key: string): string | null {
+export function getYamlMappingSection(content: string, key: string): string | null {
   const lines = content.split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
     const match = MAPPING_KEY.exec(line);
@@ -279,7 +279,23 @@ function childLines(lines: readonly string[], parent: number, indent: number): s
   return children.join("\n");
 }
 
-function extractYamlField(section: string, field: string): string | null {
+/**
+ * List the keys of a mapping section at its own indentation, whatever their values.
+ * @param section - The lines under a key, as `getYamlMappingSection` returns them.
+ * @returns {string[]} The keys, in file order.
+ */
+export function childKeys(section: string): string[] {
+  const keyed = section
+    .split(/\r?\n/)
+    .map((line) => /^(\s*)([^\s:#][^:]*):(?:\s|$)/.exec(line))
+    .filter((match) => match !== null);
+  const indent = Math.min(...keyed.map((match) => match[1]?.length ?? 0));
+  return keyed
+    .filter((match) => (match[1]?.length ?? 0) === indent)
+    .map((match) => stripQuotes((match[2] ?? "").trim()));
+}
+
+export function extractYamlField(section: string, field: string): string | null {
   for (const line of section.split(/\r?\n/)) {
     const match = FIELD.exec(line);
     const rawValue = match?.[2];
@@ -289,7 +305,7 @@ function extractYamlField(section: string, field: string): string | null {
   return null;
 }
 
-function parseYamlListEntries(section: string): Array<Record<string, string>> {
+export function parseYamlListEntries(section: string): Array<Record<string, string>> {
   const entries: Array<Record<string, string>> = [];
   let current: Record<string, string> | null = null;
 

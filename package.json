@@ -19,8 +19,13 @@
     "type": "git",
     "url": "git+https://github.com/agntn/credentials.git"
   },
+  "bin": {
+    "credentials": "./dist/cli.mjs"
+  },
   "files": [
-    "dist"
+    "dist",
+    "packages/omp/extensions",
+    "packages/pi/extensions"
   ],
   "type": "module",
   "sideEffects": false,
@@ -30,6 +35,10 @@
     ".": {
       "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
+    },
+    "./ai": {
+      "types": "./dist/ai.d.mts",
+      "import": "./dist/ai.mjs"
     },
     "./cloudflare": {
       "types": "./dist/cloudflare.d.mts",
@@ -46,6 +55,10 @@
     "./gitlab": {
       "types": "./dist/gitlab.d.mts",
       "import": "./dist/gitlab.mjs"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.mts",
+      "import": "./dist/mcp.mjs"
     }
   },
   "publishConfig": {
@@ -56,23 +69,57 @@
     "dev": "obuild --stub",
     "lint": "pnpm build && vp lint && vp fmt --check",
     "fmt": "pnpm build && vp lint --fix && vp fmt",
-    "typecheck": "tsc --noEmit --skipLibCheck && tsc -p test/tsconfig.json",
+    "typecheck": "tsc --noEmit --skipLibCheck && pnpm build && tsc -p tsconfig.extensions.json && tsc -p test/tsconfig.json",
     "test": "vp test run",
     "test:watch": "vp test watch",
     "prepack": "pnpm run build",
     "release": "pnpm build && pnpm test && changelogen --release --push"
   },
+  "dependencies": {
+    "@agntn/tools": "0.2.1",
+    "@modelcontextprotocol/server": "2.2.0"
+  },
   "devDependencies": {
     "@agntn/ox": "0.1.0",
+    "@earendil-works/pi-coding-agent": "1.0.4",
+    "@modelcontextprotocol/client": "2.2.0",
+    "@oh-my-pi/pi-coding-agent": "18.4.2",
     "@types/node": "26.2.0",
+    "ai": "7.0.127",
     "changelogen": "0.6.2",
     "obuild": "0.4.43",
     "typescript": "7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.87.1 <2",
+    "@oh-my-pi/pi-coding-agent": ">=18.4.2 <19",
+    "ai": ">=7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@oh-my-pi/pi-coding-agent": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=26"
   },
-  "packageManager": "pnpm@12.10.1"
+  "packageManager": "pnpm@12.10.1",
+  "omp": {
+    "extensions": [
+      "./packages/omp/extensions/credentials.ts"
+    ]
+  },
+  "pi": {
+    "extensions": [
+      "./packages/pi/extensions/credentials.ts"
+    ]
+  }
 }
