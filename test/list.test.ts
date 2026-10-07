@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { list as gitea } from "../src/gitea.ts";
-import { list as github } from "../src/github.ts";
+import { list as github, resolve as resolveGithub } from "../src/github.ts";
 import { list as gitlab } from "../src/gitlab.ts";
 import { listCredentials } from "../src/tool-operations.ts";
 
@@ -187,7 +187,51 @@ describe("github.list", () => {
   });
 });
 
+describe("github.resolve without gh", () => {
+  it("takes the active login's token from hosts.yml, not the first user's", async () => {
+    writeConfig(
+      "gh/hosts.yml",
+      [
+        "github.com:",
+        "    users:",
+        "        first:",
+        "            oauth_token: gho_first",
+        "        second:",
+        "            oauth_token: gho_second",
+        "    oauth_token: gho_second",
+        "    user: second",
+        "",
+      ].join("\n"),
+    );
+
+    expect(resolveGithub()).toEqual({ token: "gho_second", source: "config" });
+    expect(await github()).toMatchObject([
+      { account: "first", active: false },
+      { account: "second", active: true },
+    ]);
+  });
+});
+
 describe("gitlab.list", () => {
+  it("never hands GITLAB_TOKEN to a glab host, even though glab prints it for any host", async () => {
+    // A stand-in glab that behaves like the real one: `config get token` prints GITLAB_TOKEN.
+    const bin = mkdtempSync(join(tmpdir(), "credentials-bin-"));
+    writeFileSync(join(bin, "glab"), '#!/bin/sh\nprintf "%s\\n" "$GITLAB_TOKEN"\n');
+    chmodSync(join(bin, "glab"), 0o755);
+    vi.stubEnv("PATH", bin);
+    vi.stubEnv("GITLAB_TOKEN", "glpat-env");
+    writeConfig(
+      "glab-cli/config.yml",
+      "hosts:\n    git.other.example:\n        api_protocol: https\n        token:\n",
+    );
+    stubFetch({ "glpat-env": () => json({ username: "ops" }) });
+
+    const entries = await gitlab({ verify: true });
+
+    expect(entries).toMatchObject([{ origin: "GITLAB_TOKEN", host: "gitlab.com" }]);
+    expect(sent.map((request) => request.url)).toEqual(["https://gitlab.com/api/v4/user"]);
+  });
+
   it("reads glab hosts with a token, their API host and an OAuth expiry", async () => {
     writeConfig(
       "glab-cli/config.yml",

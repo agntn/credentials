@@ -124,17 +124,41 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
   }
 }
 
-export function runCli(command: string, args: readonly string[]): string | null {
+/**
+ * Run a CLI and take its trimmed stdout.
+ * @param command - The CLI.
+ * @param args - Its arguments.
+ * @param hidden - Variables to keep from it, for a CLI that would print one of them instead
+ * of the login asked for, as `glab config get token` prints `GITLAB_TOKEN` for any host.
+ * @returns {string | null} The output, or null when the CLI fails or prints nothing.
+ */
+export function runCli(
+  command: string,
+  args: readonly string[],
+  hidden: readonly string[] = [],
+): string | null {
   try {
     const output = execFileSync(command, args, {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT_MS,
       stdio: ["pipe", "pipe", "pipe"],
+      ...(hidden.length === 0 ? {} : { env: withoutVariables(hidden) }),
     });
     return output.trim() || null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Copy the environment without some variables.
+ * @param names - The variables to drop.
+ * @returns {NodeJS.ProcessEnv} The copy.
+ */
+function withoutVariables(names: readonly string[]): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const name of names) delete env[name];
+  return env;
 }
 
 // --- Config files ---
@@ -295,8 +319,18 @@ export function childKeys(section: string): string[] {
     .map((match) => stripQuotes((match[2] ?? "").trim()));
 }
 
+/**
+ * Read a field that sits directly in a section, never one nested deeper: in `hosts.yml`
+ * the host's own `oauth_token` comes after every user's, and belongs to the active one.
+ * @param section - The lines under a key, as `getYamlMappingSection` returns them.
+ * @param field - The field name.
+ * @returns {string | null} Its scalar value, or null when the section has no such field.
+ */
 export function extractYamlField(section: string, field: string): string | null {
-  for (const line of section.split(/\r?\n/)) {
+  const lines = section.split(/\r?\n/).filter((line) => line.trim() !== "");
+  const indent = Math.min(...lines.map((line) => /^\s*/.exec(line)?.[0].length ?? 0));
+  for (const line of lines) {
+    if ((/^\s*/.exec(line)?.[0].length ?? 0) !== indent) continue;
     const match = FIELD.exec(line);
     const rawValue = match?.[2];
     if (match?.[1] !== field || rawValue === undefined) continue;

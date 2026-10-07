@@ -24,6 +24,18 @@ import { compact, epoch } from "./fields.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
 import { field, type Probe, probe } from "./verify.ts";
 
+/**
+ * Token variables each CLI would report instead of the login `list` asks about. They are
+ * listed on their own, so the CLI runs without them.
+ */
+const GH_TOKEN_VARIABLES = [
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_ENTERPRISE_TOKEN",
+  "GITHUB_ENTERPRISE_TOKEN",
+];
+const GLAB_TOKEN_VARIABLES = ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"];
+
 /** A credential with the token `list` needs to verify it. Never leaves this module. */
 interface Candidate {
   readonly info: CredentialInfo;
@@ -129,7 +141,11 @@ function ghLogins(envWins: boolean): Candidate[] {
     const users = getYamlMappingSection(section, "users");
     const logins = users === null ? [activeUser].filter((user) => user !== null) : childKeys(users);
     return logins.map((user): Candidate => {
-      const fromCli = runCli("gh", ["auth", "token", "--hostname", host, `--user=${user}`]);
+      const fromCli = runCli(
+        "gh",
+        ["auth", "token", `--hostname=${host}`, `--user=${user}`],
+        GH_TOKEN_VARIABLES,
+      );
       const userSection = users === null ? section : getYamlMappingSection(users, user);
       const fromFile = userSection === null ? null : extractYamlField(userSection, "oauth_token");
       const token = fromCli ?? fromFile;
@@ -171,7 +187,8 @@ function glabLogins(envWins: boolean): Candidate[] {
  */
 function glabLogin(host: string, section: string, envWins: boolean): Candidate | undefined {
   const fromFile = extractYamlField(section, "token");
-  const token = fromFile ?? runCli("glab", ["config", "get", "token", "--host", host]);
+  const token =
+    fromFile ?? runCli("glab", ["config", "get", "token", `--host=${host}`], GLAB_TOKEN_VARIABLES);
   if (token === null) return undefined;
   const protocol = extractYamlField(section, "api_protocol") ?? "https";
   const apiHost = extractYamlField(section, "api_host") ?? host;
