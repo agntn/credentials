@@ -24,7 +24,7 @@ import {
   hostnameOfUrl,
   hostOfUrl,
   hutConfigFile,
-  parseYamlListEntries,
+  readTeaLogins,
   runCli,
   teaToken,
 } from "./forge.ts";
@@ -353,11 +353,8 @@ function glabLogin(host: string, section: string, envWins: boolean): Candidate |
  * @returns {Candidate[]} One entry per login with a URL.
  */
 function teaLogins(envWins: boolean): Candidate[] {
-  const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
-  const logins = getYamlMappingSection(content, "logins");
-  if (logins === null) return [];
   const seen = new Set<string>();
-  return parseYamlListEntries(logins).flatMap((entry) => {
+  return readTeaLogins().flatMap((entry) => {
     const login = teaLogin(entry);
     if (login === undefined) return [];
     const first = login.token !== null && !seen.has(login.host);
@@ -377,7 +374,7 @@ function teaLogin(entry: TeaEntry): Omit<LoginFacts, "active"> | undefined {
   const instance = teaInstance(entry.url);
   if (instance === undefined) return undefined;
   const found = teaLoginToken(entry, instance.host);
-  const status = teaVerdict(entry, found.source);
+  const status = teaVerdict(entry);
   return {
     forge: "gitea",
     host: instance.host,
@@ -442,15 +439,13 @@ interface TeaStatus {
 }
 
 /**
- * Let tea check the logins it renews itself, the OAuth ones. The rest wait for `verify`.
+ * Let tea check the logins it renews itself, also when a failed renewal kept their token back.
  * @param entry - The login's fields.
- * @param source - Where its token came from.
  * @returns {TeaStatus | undefined} tea's verdict, or undefined when tea isn't asked or gives none.
  */
-function teaVerdict(entry: TeaEntry, source: CredentialSource | undefined): TeaStatus | undefined {
+function teaVerdict(entry: TeaEntry): TeaStatus | undefined {
   const renewed = entry.auth_method === "oauth" || Boolean(entry.refresh_token);
-  if (source !== "cli" || !renewed || !entry.name) return undefined;
-  return teaStatus(entry.name);
+  return renewed && entry.name ? teaStatus(entry.name) : undefined;
 }
 
 /**

@@ -455,6 +455,55 @@ describe("gitea.list", () => {
     expect((await gitea())[0]).not.toHaveProperty("expiresAt");
   });
 
+  it("still asks tea about an OAuth login whose renewal failed", async () => {
+    writeConfig(
+      "tea/config.yml",
+      "logins:\n  - name: cloud\n    url: https://gitea.com\n    auth_method: oauth\n",
+    );
+    fakeTea({
+      "login status --output json -- cloud | ": teaStatus("cloud", {
+        valid: "false",
+        auth_method: "oauth",
+        token_expiry: "2026-10-07T11:55:00Z",
+      }),
+    });
+
+    expect(await gitea()).toMatchObject([
+      {
+        active: false,
+        state: "expired",
+        expiresAt: Date.parse("2026-10-07T11:55:00Z"),
+        note: "the CLI records this login, but no token could be read",
+      },
+    ]);
+  });
+
+  it("finds a login tea's own host match misses, behind an SSH one or on an explicit :443", () => {
+    writeConfig(
+      "tea/config.yml",
+      [
+        "logins:",
+        "  - name: signed",
+        "    url: https://git.home.example",
+        "    ssh_certificate_principal: me",
+        "  - name: cloud",
+        "    url: https://git.home.example:443",
+        "    auth_method: oauth",
+        "",
+      ].join("\n"),
+    );
+    fakeTea({
+      "login helper get --login=cloud | protocol=https;host=git.home.example;":
+        "protocol=https\nhost=git.home.example:443\nusername=me\npassword=tea-oauth",
+    });
+
+    expect(resolveGitea({ baseURL: "https://git.home.example" })).toEqual({
+      token: "tea-oauth",
+      source: "cli",
+      origin: "tea",
+    });
+  });
+
   it("never takes a token tea hands out for a login on another host", async () => {
     writeConfig(
       "tea/config.yml",

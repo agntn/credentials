@@ -201,7 +201,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredent
     case "gitlab":
       return askCli("glab", ["config", "get", "token", "--host", hostname]);
     case "gitea":
-      return cliCredential(teaToken(hostname), "tea");
+      return cliCredential(teaToken(hostname) ?? teaTokenByName(hostname), "tea");
     case "cursor-origin":
       return hostname === ORIGIN_HOST ? askCli("origin", ["auth", "token"]) : null;
     default:
@@ -243,6 +243,20 @@ export function teaToken(host: string, login?: string): string | null {
     lines.find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1) ?? "";
   const answered = hostOfUrl(`${field("protocol")}://${field("host")}`);
   return answered === host ? field("password") || null : null;
+}
+
+/**
+ * Ask tea for each login on a host by name, for the ones its literal host match misses.
+ * @param host - Host and port of the instance.
+ * @returns {string | null} The first token a login on that host hands out, or null.
+ */
+function teaTokenByName(host: string): string | null {
+  for (const entry of readTeaLogins()) {
+    if (!entry.name || !entry.url || hostOfUrl(entry.url) !== host) continue;
+    const token = teaToken(host, entry.name);
+    if (token !== null) return token;
+  }
+  return null;
 }
 
 /**
@@ -378,11 +392,7 @@ function readGlabConfig(hostname: string): string | null {
  * @returns {string | null} The first matching login's token, or null.
  */
 function readTeaConfig(host: string): string | null {
-  const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
-  const loginsSection = getYamlMappingSection(content, "logins");
-  if (!loginsSection) return null;
-
-  for (const entry of parseYamlListEntries(loginsSection)) {
+  for (const entry of readTeaLogins()) {
     if (!entry.token) continue;
     const urlHost = entry.url ? hostOfUrl(entry.url) : null;
     if (entry.name === host || urlHost === host) return entry.token;
@@ -411,6 +421,20 @@ function readOriginConfig(hostname: string): string | null {
   const login = originLogin();
   if (login === undefined) return null;
   return login.expiresAt !== undefined && login.expiresAt <= Date.now() ? null : login.token;
+}
+
+/**
+ * Read the logins in tea's `config.yml`, or none when there is no such file.
+ * @returns {Array<Record<string, string>>} Each login's fields, in file order.
+ */
+export function readTeaLogins(): Array<Record<string, string>> {
+  try {
+    const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
+    const logins = getYamlMappingSection(content, "logins");
+    return logins === null ? [] : parseYamlListEntries(logins);
+  } catch {
+    return [];
+  }
 }
 
 // --- Helpers ---

@@ -240,7 +240,7 @@ describe("resolveToken", () => {
     });
 
     it("reads tea config for Gitea", () => {
-      mockedReadFileSync.mockReturnValueOnce(
+      mockedReadFileSync.mockReturnValue(
         "logins:\n  - name: codeberg.org\n    url: https://codeberg.org\n    token: tea-fromfile\n",
       );
       const result = resolveToken("gitea", {
