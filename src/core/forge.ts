@@ -125,7 +125,7 @@ export function resolveForge(forge: Forge, options?: ForgeOptions): ForgeCredent
   const account = options?.account;
   if (account !== undefined && forge !== "github") return null;
 
-  return fromLogin(forge, options?.baseURL, account);
+  return fromLogin(forge, loginHost(forge, options?.baseURL), account);
 }
 
 /**
@@ -159,16 +159,12 @@ export function envCredential(key: string): ForgeCredential | undefined {
 /**
  * Ask the CLI first, then read its config file, for a machine that has the file but not the CLI.
  * @param forge - The forge whose CLI to ask.
- * @param baseURL - The instance whose login to read, or undefined for the forge's public host.
+ * @param hostname - The host whose login to read.
  * @param account - The login to read instead of the active one.
  * @returns {ForgeCredential | null} The token, or null when neither holds one.
  */
-function fromLogin(
-  forge: Forge,
-  baseURL: string | undefined,
-  account?: string,
-): ForgeCredential | null {
-  return fromCli(forge, baseURL, account) ?? fromConfig(forge, hostnameOf(forge, baseURL), account);
+function fromLogin(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
+  return fromCli(forge, hostname, account) ?? fromConfig(forge, hostname, account);
 }
 
 /**
@@ -181,18 +177,20 @@ export function savedCredential(token: string | null, origin: string): ForgeCred
   return token === null ? null : { token, source: "config", origin };
 }
 
-function hostnameOf(forge: Forge, baseURL?: string): string {
-  return (baseURL && hostnameOfUrl(baseURL)) || DEFAULT_HOSTS[forge];
+/**
+ * The host a CLI files its login under: the hostname for gh and glab, host and port for tea.
+ * @param forge - The forge.
+ * @param baseURL - The instance, or undefined for the forge's public host.
+ * @returns {string} The host.
+ */
+function loginHost(forge: Forge, baseURL?: string): string {
+  const host = baseURL && (forge === "gitea" ? hostOfUrl(baseURL) : hostnameOfUrl(baseURL));
+  return host || DEFAULT_HOSTS[forge];
 }
 
 // --- CLI tools ---
 
-function fromCli(
-  forge: Forge,
-  baseURL: string | undefined,
-  account?: string,
-): ForgeCredential | null {
-  const hostname = hostnameOf(forge, baseURL);
+function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
   switch (forge) {
     case "github": {
       // `--user` reads one login's token without switching the active one.
@@ -203,7 +201,7 @@ function fromCli(
     case "gitlab":
       return askCli("glab", ["config", "get", "token", "--host", hostname]);
     case "gitea":
-      return cliCredential(teaToken((baseURL && hostOfUrl(baseURL)) || DEFAULT_HOSTS.gitea), "tea");
+      return cliCredential(teaToken(hostname), "tea");
     case "cursor-origin":
       return hostname === ORIGIN_HOST ? askCli("origin", ["auth", "token"]) : null;
     default:
@@ -376,18 +374,18 @@ function readGlabConfig(hostname: string): string | null {
  *       token: ...
  *
  * Only token logins keep a token here. OAuth ones live in tea's encrypted store.
- * @param hostname - Matched against each login's name and URL host.
+ * @param host - Host and port, matched against each login's name and URL host, as tea does.
  * @returns {string | null} The first matching login's token, or null.
  */
-function readTeaConfig(hostname: string): string | null {
+function readTeaConfig(host: string): string | null {
   const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
   const loginsSection = getYamlMappingSection(content, "logins");
   if (!loginsSection) return null;
 
   for (const entry of parseYamlListEntries(loginsSection)) {
     if (!entry.token) continue;
-    const urlHostname = entry.url ? hostnameOfUrl(entry.url) : null;
-    if (entry.name === hostname || urlHostname === hostname) return entry.token;
+    const urlHost = entry.url ? hostOfUrl(entry.url) : null;
+    if (entry.name === host || urlHost === host) return entry.token;
   }
   return null;
 }

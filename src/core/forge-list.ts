@@ -194,11 +194,11 @@ function giteeApiBase(): string {
 
 /**
  * The instance tea pairs `GITEA_TOKEN` with: `GITEA_INSTANCE_URL`.
- * @returns {string | undefined} Its host, or undefined when it is unset or doesn't parse.
+ * @returns {string | undefined} Its host and port, as tea tells logins apart, or undefined when it is unset or doesn't parse.
  */
 function giteaInstanceHost(): string | undefined {
   const url = process.env.GITEA_INSTANCE_URL;
-  return (url && hostnameOfUrl(url)) || undefined;
+  return (url && hostOfUrl(url)) || undefined;
 }
 
 /**
@@ -376,7 +376,7 @@ type TeaEntry = Readonly<Record<string, string>>;
 function teaLogin(entry: TeaEntry): Omit<LoginFacts, "active"> | undefined {
   const instance = teaInstance(entry.url);
   if (instance === undefined) return undefined;
-  const found = teaLoginToken(entry, instance.authority);
+  const found = teaLoginToken(entry, instance.host);
   const status = teaVerdict(entry, found.source);
   return {
     forge: "gitea",
@@ -395,21 +395,18 @@ function teaLogin(entry: TeaEntry): Omit<LoginFacts, "active"> | undefined {
 /** A tea login's instance. */
 interface TeaInstance {
   readonly url: string;
-  /** The host the login is listed under. */
+  /** Host and port, which tea tells its logins apart by. */
   readonly host: string;
-  /** Host and port, which tea matches the login by. */
-  readonly authority: string;
 }
 
 /**
- * Split a login's URL into the hosts `list` and tea go by.
+ * Read the host a login is listed under from its URL.
  * @param url - The login's URL.
- * @returns {TeaInstance | undefined} Both hosts, or undefined when the URL doesn't parse.
+ * @returns {TeaInstance | undefined} The instance, or undefined when the URL doesn't parse.
  */
 function teaInstance(url: string | undefined): TeaInstance | undefined {
-  const host = url ? hostnameOfUrl(url) : null;
-  const authority = url ? hostOfUrl(url) : null;
-  return url && host && authority ? { url, host, authority } : undefined;
+  const host = url ? hostOfUrl(url) : null;
+  return url && host ? { url, host } : undefined;
 }
 
 /** A tea login's token and where it came from. */
@@ -422,11 +419,11 @@ interface TeaToken {
 /**
  * Take a login's token from tea, or from the file when tea is missing.
  * @param entry - The login's fields.
- * @param authority - Host and port of its instance.
+ * @param host - Host and port of its instance.
  * @returns {TeaToken} The token and where it came from.
  */
-function teaLoginToken(entry: TeaEntry, authority: string): TeaToken {
-  const fromCli = entry.name ? teaToken(authority, entry.name) : null;
+function teaLoginToken(entry: TeaEntry, host: string): TeaToken {
+  const fromCli = entry.name ? teaToken(host, entry.name) : null;
   if (fromCli !== null) return { token: fromCli, source: "cli", origin: "tea" };
   const fromFile = entry.token || null;
   return {

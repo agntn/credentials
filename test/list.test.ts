@@ -347,7 +347,7 @@ describe("gitea.list", () => {
     stubFetch({ "gitea-env": () => json({ username: "ops" }) });
 
     expect(await gitea({ verify: true })).toMatchObject([
-      { host: "git.home.example", origin: "GITEA_TOKEN", account: "ops", state: "valid" },
+      { host: "git.home.example:3000", origin: "GITEA_TOKEN", account: "ops", state: "valid" },
     ]);
     expect(sent).toEqual([
       {
@@ -531,6 +531,23 @@ describe("gitea.list active login", () => {
     );
 
     expect((await gitea()).map((entry) => entry.active)).toEqual([true, false]);
+  });
+
+  it("tells two ports of one host apart, as tea does", async () => {
+    writeConfig(
+      "tea/config.yml",
+      "logins:\n  - name: a\n    url: https://git.home.example:3000\n    token: tea-a\n  - name: b\n    url: https://git.home.example:4000\n    token: tea-b\n",
+    );
+
+    expect(await gitea()).toMatchObject([
+      { host: "git.home.example:3000", active: true },
+      { host: "git.home.example:4000", active: true },
+    ]);
+    expect(resolveGitea({ baseURL: "https://git.home.example:4000/api/v1" })).toEqual({
+      token: "tea-b",
+      source: "config",
+      origin: "tea config.yml",
+    });
   });
 });
 
