@@ -297,8 +297,37 @@ describe("gitlab.list", () => {
   });
 });
 
+/* A stand-in tea answering exact `<args> | <stdin line>;` keys, and failing like tea otherwise. */
+function fakeTea(answers: Record<string, string>): void {
+  const quote = (text: string): string => `'${text.replaceAll("'", `'\\''`)}'`;
+  const cases = Object.entries(answers)
+    .map(([call, output]) => `  ${quote(call)}) printf '%s\\n' ${quote(output)} ;;`)
+    .join("\n");
+  const bin = mkdtempSync(join(tmpdir(), "credentials-bin-"));
+  writeFileSync(
+    join(bin, "tea"),
+    [
+      "#!/bin/sh",
+      'request=""',
+      'while IFS= read -r line && [ -n "$line" ]; do request="$request$line;"; done',
+      'case "$* | $request" in',
+      cases,
+      '  *) echo "Error: user not set" >&2; exit 1 ;;',
+      "esac",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "tea"), 0o755);
+  vi.stubEnv("PATH", bin);
+}
+
+/* What `tea login status --output json` prints for one login. */
+function teaStatus(name: string, fields: Record<string, string>): string {
+  return JSON.stringify([{ name, url: "https://gitea.com", helper: "false", ...fields }]);
+}
+
 describe("gitea.list", () => {
-  it("never sends GITEA_TOKEN, which names no host", async () => {
+  it("never sends GITEA_TOKEN without GITEA_INSTANCE_URL, which names its host", async () => {
     vi.stubEnv("GITEA_TOKEN", "gitea-env");
     stubFetch({});
 
@@ -306,8 +335,170 @@ describe("gitea.list", () => {
       {
         host: "any",
         state: "unchecked",
-        note: "GITEA_TOKEN names no host, so it is never sent anywhere to check",
+        note: "GITEA_TOKEN names no host without a valid GITEA_INSTANCE_URL, so it is never sent anywhere to check",
       },
+    ]);
+    expect(sent).toEqual([]);
+  });
+
+  it("checks GITEA_TOKEN on GITEA_INSTANCE_URL, as tea pairs them", async () => {
+    vi.stubEnv("GITEA_TOKEN", "gitea-env");
+    vi.stubEnv("GITEA_INSTANCE_URL", "https://git.home.example:3000/");
+    stubFetch({ "gitea-env": () => json({ username: "ops" }) });
+
+    expect(await gitea({ verify: true })).toMatchObject([
+      { host: "git.home.example", origin: "GITEA_TOKEN", account: "ops", state: "valid" },
+    ]);
+    expect(sent).toEqual([
+      {
+        url: "https://git.home.example:3000/api/v1/user",
+        authorization: "token gitea-env",
+        redirect: "error",
+      },
+    ]);
+  });
+
+  it("reads token, OAuth and SSH logins through tea, and leaves the OAuth check to tea", async () => {
+    writeConfig(
+      "tea/config.yml",
+      [
+        "logins:",
+        "    - name: cloud",
+        "      url: https://gitea.com",
+        '      ssh_key: ""',
+        "      user: me",
+        "      auth_method: oauth",
+        "    - name: signed",
+        "      url: https://git.home.example",
+        "      ssh_certificate_principal: me",
+        "      ssh_agent: true",
+        "      user: me",
+        "    - name: home",
+        "      url: https://git.home.example",
+        "      token: tea-home",
+        "      user: me",
+        "",
+      ].join("\n"),
+    );
+    fakeTea({
+      "login helper get | protocol=https;host=gitea.com;":
+        "protocol=https\nhost=gitea.com\nusername=me\npassword=tea-oauth",
+      "login helper get --login=cloud | protocol=https;host=gitea.com;":
+        "protocol=https\nhost=gitea.com\nusername=me\npassword=tea-oauth",
+      "login helper get --login=home | protocol=https;host=git.home.example;":
+        "protocol=https\nhost=git.home.example\nusername=me\npassword=tea-home",
+      "login status --output json -- cloud | ": teaStatus("cloud", {
+        user: "me",
+        valid: "true",
+        auth_method: "oauth",
+        token_expiry: "2026-10-07T13:00:00Z",
+      }),
+    });
+    stubFetch({ "tea-home": () => json({ username: "me" }) });
+
+    expect(resolveGitea()).toEqual({ token: "tea-oauth", source: "cli", origin: "tea" });
+    expect(await gitea({ verify: true })).toEqual([
+      {
+        service: "gitea",
+        host: "gitea.com",
+        source: "cli",
+        origin: "tea",
+        active: true,
+        state: "valid",
+        account: "me",
+        expiresAt: Date.parse("2026-10-07T13:00:00Z"),
+      },
+      {
+        service: "gitea",
+        host: "git.home.example",
+        source: "config",
+        origin: "tea config.yml",
+        active: false,
+        state: "unchecked",
+        account: "me",
+        note: "tea signs its requests with an SSH key for this login, so there's no token to read",
+      },
+      {
+        service: "gitea",
+        host: "git.home.example",
+        source: "cli",
+        origin: "tea",
+        active: true,
+        state: "valid",
+        account: "me",
+      },
+    ]);
+    expect(sent.map((request) => request.authorization)).toEqual(["token tea-home"]);
+  });
+
+  it("reports tea's refusal of an OAuth login without guessing why", async () => {
+    writeConfig(
+      "tea/config.yml",
+      "logins:\n  - name: cloud\n    url: https://gitea.com\n    auth_method: oauth\n",
+    );
+    fakeTea({
+      "login helper get --login=cloud | protocol=https;host=gitea.com;":
+        "protocol=https\nhost=gitea.com\nusername=me\npassword=tea-oauth",
+      "login status --output json -- cloud | ": teaStatus("cloud", {
+        valid: "false",
+        auth_method: "oauth",
+        token_expiry: "",
+      }),
+    });
+
+    expect(await gitea()).toEqual([
+      expect.objectContaining({
+        state: "rejected",
+        note: "tea login status couldn't log in with it",
+      }),
+    ]);
+    expect((await gitea())[0]).not.toHaveProperty("expiresAt");
+  });
+
+  it("never takes a token tea hands out for a login on another host", async () => {
+    writeConfig(
+      "tea/config.yml",
+      "logins:\n  - name: home\n    url: https://git.home.example\n    token: tea-home\n",
+    );
+    fakeTea({
+      "login helper get --login=home | protocol=https;host=git.home.example;":
+        "protocol=https\nhost=gitea.com\nusername=me\npassword=tea-elsewhere",
+    });
+    stubFetch({ "tea-home": () => json({ username: "me" }) });
+
+    expect(await gitea({ verify: true })).toMatchObject([
+      { host: "git.home.example", origin: "tea config.yml", source: "config", state: "valid" },
+    ]);
+    expect(sent.map((request) => request.authorization)).toEqual(["token tea-home"]);
+  });
+
+  it("finds no OAuth token without tea, and reads an expiry tea wrote into the file", async () => {
+    const past = Date.parse("2026-10-07T11:00:00Z");
+    writeConfig(
+      "tea/config.yml",
+      [
+        "logins:",
+        "  - name: cloud",
+        "    url: https://gitea.com",
+        "    auth_method: oauth",
+        "  - name: legacy",
+        "    url: https://gitea.com",
+        "    token: tea-legacy",
+        "    refresh_token: tea-refresh",
+        `    token_expiry: ${past / 1000}`,
+        "",
+      ].join("\n"),
+    );
+    stubFetch({});
+
+    expect(await gitea({ verify: true })).toMatchObject([
+      {
+        origin: "tea config.yml",
+        active: false,
+        state: "unchecked",
+        note: "the CLI records this login, but no token could be read",
+      },
+      { origin: "tea config.yml", active: true, state: "expired", expiresAt: past },
     ]);
     expect(sent).toEqual([]);
   });

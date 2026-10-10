@@ -4,9 +4,9 @@
  * Every forge tries the same chain:
  *   1. Explicit token (passed in options)
  *   2. Environment variables (GH_TOKEN, GITLAB_TOKEN, ...)
- *   3. The forge CLI (gh, glab)
- *   4. The CLI's config file, for a machine with the config but not the CLI (tea and hut
- *      print no token, so for Gitea and Sourcehut the file is the only step)
+ *   3. The forge CLI (gh, glab, tea's git credential helper)
+ *   4. The CLI's config file, for a machine with the config but not the CLI (hut prints
+ *      no token, so for Sourcehut the file is the only step)
  *
  * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
  * Bitbucket, which has no official CLI at all. Azure DevOps keeps its login in the keyring,
@@ -125,7 +125,7 @@ export function resolveForge(forge: Forge, options?: ForgeOptions): ForgeCredent
   const account = options?.account;
   if (account !== undefined && forge !== "github") return null;
 
-  return fromLogin(forge, hostnameOf(forge, options?.baseURL), account);
+  return fromLogin(forge, options?.baseURL, account);
 }
 
 /**
@@ -159,12 +159,16 @@ export function envCredential(key: string): ForgeCredential | undefined {
 /**
  * Ask the CLI first, then read its config file, for a machine that has the file but not the CLI.
  * @param forge - The forge whose CLI to ask.
- * @param hostname - The host whose login to read.
+ * @param baseURL - The instance whose login to read, or undefined for the forge's public host.
  * @param account - The login to read instead of the active one.
  * @returns {ForgeCredential | null} The token, or null when neither holds one.
  */
-function fromLogin(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
-  return fromCli(forge, hostname, account) ?? fromConfig(forge, hostname, account);
+function fromLogin(
+  forge: Forge,
+  baseURL: string | undefined,
+  account?: string,
+): ForgeCredential | null {
+  return fromCli(forge, baseURL, account) ?? fromConfig(forge, hostnameOf(forge, baseURL), account);
 }
 
 /**
@@ -183,7 +187,12 @@ function hostnameOf(forge: Forge, baseURL?: string): string {
 
 // --- CLI tools ---
 
-function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
+function fromCli(
+  forge: Forge,
+  baseURL: string | undefined,
+  account?: string,
+): ForgeCredential | null {
+  const hostname = hostnameOf(forge, baseURL);
   switch (forge) {
     case "github": {
       // `--user` reads one login's token without switching the active one.
@@ -193,6 +202,8 @@ function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredent
     }
     case "gitlab":
       return askCli("glab", ["config", "get", "token", "--host", hostname]);
+    case "gitea":
+      return cliCredential(teaToken((baseURL && hostOfUrl(baseURL)) || DEFAULT_HOSTS.gitea), "tea");
     case "cursor-origin":
       return hostname === ORIGIN_HOST ? askCli("origin", ["auth", "token"]) : null;
     default:
@@ -207,39 +218,66 @@ function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredent
  * @returns {ForgeCredential | null} The credential, or null.
  */
 function askCli(command: ForgeCli, args: readonly string[]): ForgeCredential | null {
-  const token = runCli(command, args);
+  return cliCredential(runCli(command, args), command);
+}
+
+/**
+ * Wrap a token a CLI printed.
+ * @param token - The token, or null.
+ * @param command - The CLI.
+ * @returns {ForgeCredential | null} The credential, or null.
+ */
+function cliCredential(token: string | null, command: ForgeCli): ForgeCredential | null {
   return token === null ? null : { token, source: "cli", origin: command };
 }
 
 /**
- * Run a CLI and take its trimmed stdout.
- * @param command - The CLI.
- * @param args - Its arguments.
- * @param hidden - Variables to keep from it, for a CLI that would print one of them instead
- * of the login asked for, as `glab config get token` prints `GITLAB_TOKEN` for any host.
- * @returns {string | null} The output, or null when the CLI fails or prints nothing.
+ * Ask tea's git credential helper for a token. It renews an OAuth one about to expire first.
+ * @param host - Host and port of the instance. tea takes the first login whose URL has them.
+ * @param login - A login to read by name instead.
+ * @returns {string | null} The token, or null when tea holds none whose login is on that host.
  */
+export function teaToken(host: string, login?: string): string | null {
+  const args = ["login", "helper", "get"];
+  if (login !== undefined) args.push(`--login=${login}`);
+  const lines = runCli("tea", args, `protocol=https\nhost=${host}\n\n`)?.split(/\r?\n/) ?? [];
+  const field = (key: string): string =>
+    lines.find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1) ?? "";
+  const answered = hostOfUrl(`${field("protocol")}://${field("host")}`);
+  return answered === host ? field("password") || null : null;
+}
+
 /**
  * Token variables each CLI reports instead of the login it is asked about:
  * `glab config get token` prints `GITLAB_TOKEN` for any host. Every run hides them,
  * so a CLI answer always names a login, and the variables are read on their own.
+ * tea's other commands build a login from `GITEA_TOKEN` or `GH_TOKEN` with `GITEA_INSTANCE_URL`.
  */
 const CLI_TOKEN_VARIABLES: Record<ForgeCli, readonly string[]> = {
   gh: ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"],
   glab: ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"],
   /** Without the endpoint, `origin` answers for origin.cursor.com, the host it was asked about. */
   origin: ["CURSOR_AUTH_TOKEN", "CURSOR_ORIGIN_ENDPOINT"],
+  tea: ["GITEA_TOKEN", "GH_TOKEN", "GITEA_INSTANCE_URL"],
 };
 
-export type ForgeCli = "gh" | "glab" | "origin";
+export type ForgeCli = "gh" | "glab" | "origin" | "tea";
 
-export function runCli(command: ForgeCli, args: readonly string[]): string | null {
+/**
+ * Run a CLI without the token variables it would answer with, and take its trimmed stdout.
+ * @param command - The CLI.
+ * @param args - Its arguments.
+ * @param input - What to write to its stdin, for a CLI that reads a request there.
+ * @returns {string | null} The output, or null when the CLI fails or prints nothing.
+ */
+export function runCli(command: ForgeCli, args: readonly string[], input?: string): string | null {
   try {
     const output = execFileSync(command, args, {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT_MS,
       stdio: ["pipe", "pipe", "pipe"],
       env: withoutVariables(CLI_TOKEN_VARIABLES[command]),
+      ...(input === undefined ? {} : { input }),
     });
     return output.trim() || null;
   } catch {
@@ -336,6 +374,8 @@ function readGlabConfig(hostname: string): string | null {
  *     - name: gitea.com
  *       url: https://gitea.com
  *       token: ...
+ *
+ * Only token logins keep a token here. OAuth ones live in tea's encrypted store.
  * @param hostname - Matched against each login's name and URL host.
  * @returns {string | null} The first matching login's token, or null.
  */
@@ -400,6 +440,19 @@ export function ghConfigDir(): string {
 export function hostnameOfUrl(url: string): string | null {
   try {
     return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a URL's host with its port, the way tea matches its logins.
+ * @param url - Any URL.
+ * @returns {string | null} The host, or null when the URL doesn't parse or has none.
+ */
+export function hostOfUrl(url: string): string | null {
+  try {
+    return new URL(url).host || null;
   } catch {
     return null;
   }

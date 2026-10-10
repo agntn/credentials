@@ -22,9 +22,11 @@ import {
   getYamlMappingSection,
   ghConfigDir,
   hostnameOfUrl,
+  hostOfUrl,
   hutConfigFile,
   parseYamlListEntries,
   runCli,
+  teaToken,
 } from "./forge.ts";
 import {
   AZURE_DEVOPS_HEADERS,
@@ -33,11 +35,11 @@ import {
   storedPatFor,
   storedPats,
 } from "./azure-devops.ts";
-import { compact, epoch, isRecord, nonEmptyString } from "./fields.ts";
+import { compact, epoch, epochSeconds, isRecord, nonEmptyString } from "./fields.ts";
 import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutOrigin, hutToken } from "./hut.ts";
 import { ORIGIN_API, ORIGIN_HOST, originApiBase, originLogin } from "./origin.ts";
 import { httpOrigin, PUSHIN_ORIGIN, punLoginFor, punLogins } from "./pun.ts";
-import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
+import type { CredentialInfo, CredentialSource, CredentialState, ListOptions } from "./types.ts";
 import { field, type Probe, type ProbeRequest, probe } from "./verify.ts";
 
 /** A credential with the token `list` needs to verify it. Never leaves this module. */
@@ -151,8 +153,11 @@ function envNote(facts: EnvFacts, credential: ForgeCredential | undefined): stri
     return `${key} goes out with ${ENV_USERNAMES[key]}, which isn't set, so resolve skips it`;
   }
   if (facts.host !== undefined) return UNVERIFIABLE[key];
-  return facts.forge === "azure-devops"
-    ? `${key} has no organization (set one with az devops configure --defaults), so it is never sent anywhere to check`
+  if (facts.forge === "azure-devops") {
+    return `${key} has no organization (set one with az devops configure --defaults), so it is never sent anywhere to check`;
+  }
+  return facts.forge === "gitea"
+    ? `${key} names no host without a valid GITEA_INSTANCE_URL, so it is never sent anywhere to check`
     : `${key} names no host, so it is never sent anywhere to check`;
 }
 
@@ -167,6 +172,7 @@ function envVerifyUrl(forge: Forge, host: string | undefined): string | undefine
   if (forge === "azure-devops") return `${host}/_apis/connectionData`;
   if (forge === "pushin") return `${pushinUrl().replace(/\/+$/, "")}/api/v1/user`;
   if (forge === "cursor-origin") return `${originApiBase()}/rate_limit`;
+  if (forge === "gitea") return userEndpoint(forge, process.env.GITEA_INSTANCE_URL ?? "");
   return forge === "gitee" ? `${giteeApiBase()}/user` : userEndpoint(forge, `https://${host}`);
 }
 
@@ -187,15 +193,24 @@ function giteeApiBase(): string {
 }
 
 /**
- * The host a forge's own CLI sends its token variable to. Gitea and Sourcehut have no such
- * CLI convention, so `GITEA_TOKEN` and `SRHT_TOKEN` have no host to be checked against.
- * Gitee's is the host of `GITEE_API_BASE`, and Pushin's of `PUSHIN_URL`, when it has one.
+ * The instance tea pairs `GITEA_TOKEN` with: `GITEA_INSTANCE_URL`.
+ * @returns {string | undefined} Its host, or undefined when it is unset or doesn't parse.
+ */
+function giteaInstanceHost(): string | undefined {
+  const url = process.env.GITEA_INSTANCE_URL;
+  return (url && hostnameOfUrl(url)) || undefined;
+}
+
+/**
+ * The host a forge's own CLI sends its token variable to. Sourcehut has no such CLI
+ * convention, so `SRHT_TOKEN` has no host to be checked against. Gitea's is the host of
+ * `GITEA_INSTANCE_URL`, Gitee's of `GITEE_API_BASE`, and Pushin's of `PUSHIN_URL`, when it has one.
  * Azure DevOps' is its default organization.
  * @param forge - The forge.
  * @returns {string | undefined} The host, or undefined when the variable names none.
  */
 function envHost(forge: Forge): string | undefined {
-  if (forge === "gitea" || forge === "sourcehut") return undefined;
+  if (forge === "sourcehut") return undefined;
   const paired = PAIRED_HOSTS[forge];
   if (paired !== undefined) return paired();
   if (forge === "gitlab") {
@@ -207,6 +222,7 @@ function envHost(forge: Forge): string | undefined {
 
 /** Forges whose token variable goes wherever another variable points. */
 const PAIRED_HOSTS: Partial<Record<Forge, () => string | undefined>> = {
+  gitea: giteaInstanceHost,
   gitee: () => hostnameOfUrl(giteeApiBase()) || undefined,
   "azure-devops": defaultOrganization,
   pushin: pushinHost,
@@ -332,34 +348,155 @@ function glabLogin(host: string, section: string, envWins: boolean): Candidate |
 }
 
 /**
- * Logins in tea's `config.yml`.
+ * Every tea login, token, OAuth or SSH. A host's first login with a token is the active one.
  * @param envWins - Whether a token variable wins over every login.
- * @returns {Candidate[]} One entry per login with a token.
+ * @returns {Candidate[]} One entry per login with a URL.
  */
 function teaLogins(envWins: boolean): Candidate[] {
   const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
   const logins = getYamlMappingSection(content, "logins");
   if (logins === null) return [];
-  // resolve takes the first login for a host, so only that one is active.
   const seen = new Set<string>();
   return parseYamlListEntries(logins).flatMap((entry) => {
-    const host = entry.url ? hostnameOfUrl(entry.url) : null;
-    if (!entry.token || !entry.url || host === null) return [];
-    const first = !seen.has(host);
-    seen.add(host);
-    return [
-      loginCandidate({
-        forge: "gitea",
-        host,
-        account: entry.user || undefined,
-        active: !envWins && first,
-        found: "config",
-        origin: CONFIG_FILES.gitea,
-        token: entry.token,
-        verifyUrl: userEndpoint("gitea", entry.url),
-      }),
-    ];
+    const login = teaLogin(entry);
+    if (login === undefined) return [];
+    const first = login.token !== null && !seen.has(login.host);
+    if (login.token !== null) seen.add(login.host);
+    return [loginCandidate({ ...login, active: !envWins && first })];
   });
+}
+
+type TeaEntry = Readonly<Record<string, string>>;
+
+/**
+ * Gather what the file and tea say about one login.
+ * @param entry - The login's fields in `config.yml`.
+ * @returns {Omit<LoginFacts, "active"> | undefined} The facts, or undefined without a usable URL.
+ */
+function teaLogin(entry: TeaEntry): Omit<LoginFacts, "active"> | undefined {
+  const instance = teaInstance(entry.url);
+  if (instance === undefined) return undefined;
+  const found = teaLoginToken(entry, instance.authority);
+  const status = teaVerdict(entry, found.source);
+  return {
+    forge: "gitea",
+    host: instance.host,
+    account: status?.account ?? (entry.user || undefined),
+    found: found.source,
+    origin: found.origin,
+    token: found.token,
+    verifyUrl: userEndpoint("gitea", instance.url),
+    expiresAt: status === undefined ? epochSeconds(entry.token_expiry) : status.expiresAt,
+    checked: status,
+    missingReason: sshReason(entry),
+  };
+}
+
+/** A tea login's instance. */
+interface TeaInstance {
+  readonly url: string;
+  /** The host the login is listed under. */
+  readonly host: string;
+  /** Host and port, which tea matches the login by. */
+  readonly authority: string;
+}
+
+/**
+ * Split a login's URL into the hosts `list` and tea go by.
+ * @param url - The login's URL.
+ * @returns {TeaInstance | undefined} Both hosts, or undefined when the URL doesn't parse.
+ */
+function teaInstance(url: string | undefined): TeaInstance | undefined {
+  const host = url ? hostnameOfUrl(url) : null;
+  const authority = url ? hostOfUrl(url) : null;
+  return url && host && authority ? { url, host, authority } : undefined;
+}
+
+/** A tea login's token and where it came from. */
+interface TeaToken {
+  readonly token: string | null;
+  readonly source: CredentialSource | undefined;
+  readonly origin: string;
+}
+
+/**
+ * Take a login's token from tea, or from the file when tea is missing.
+ * @param entry - The login's fields.
+ * @param authority - Host and port of its instance.
+ * @returns {TeaToken} The token and where it came from.
+ */
+function teaLoginToken(entry: TeaEntry, authority: string): TeaToken {
+  const fromCli = entry.name ? teaToken(authority, entry.name) : null;
+  if (fromCli !== null) return { token: fromCli, source: "cli", origin: "tea" };
+  const fromFile = entry.token || null;
+  return {
+    token: fromFile,
+    source: fromFile === null ? undefined : "config",
+    origin: CONFIG_FILES.gitea,
+  };
+}
+
+/** tea's own verdict on a login it renews. */
+interface TeaStatus {
+  readonly state: CredentialState;
+  readonly note?: string;
+  readonly account?: string;
+  readonly expiresAt?: number;
+}
+
+/**
+ * Let tea check the logins it renews itself, the OAuth ones. The rest wait for `verify`.
+ * @param entry - The login's fields.
+ * @param source - Where its token came from.
+ * @returns {TeaStatus | undefined} tea's verdict, or undefined when tea isn't asked or gives none.
+ */
+function teaVerdict(entry: TeaEntry, source: CredentialSource | undefined): TeaStatus | undefined {
+  const renewed = entry.auth_method === "oauth" || Boolean(entry.refresh_token);
+  if (source !== "cli" || !renewed || !entry.name) return undefined;
+  return teaStatus(entry.name);
+}
+
+/**
+ * Ask `tea login status` about one login. It goes online, `verify` or not, like `cf auth whoami`.
+ * @param name - The login's name.
+ * @returns {TeaStatus | undefined} The verdict, or undefined when tea gave none.
+ */
+function teaStatus(name: string): TeaStatus | undefined {
+  const parsed = readJson(runCli("tea", ["login", "status", "--output", "json", "--", name]));
+  const statuses: readonly unknown[] = Array.isArray(parsed) ? parsed : [];
+  const status = statuses.find((entry) => field(entry, "name") === name);
+  if (status === undefined) return undefined;
+  const valid = field(status, "valid") === "true";
+  return compact<TeaStatus>({
+    state: valid ? "valid" : "rejected",
+    note: valid ? undefined : "tea login status couldn't log in with it",
+    account: field(status, "user"),
+    expiresAt: epoch(field(status, "token_expiry")),
+  });
+}
+
+/**
+ * Parse JSON without letting out the SyntaxError, which quotes its input.
+ * @param text - CLI output, if any.
+ * @returns {unknown} The value, or undefined when it isn't JSON.
+ */
+function readJson(text: string | null): unknown {
+  try {
+    return JSON.parse(text ?? "");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Say why a login that signs with an SSH certificate or agent key has no token.
+ * @param entry - The login's fields.
+ * @returns {string | undefined} The reason it has no token, or undefined for any other login.
+ */
+function sshReason(entry: TeaEntry): string | undefined {
+  return entry.ssh_certificate_principal || entry.ssh_key_agent_pub
+    ? "tea signs its requests with an SSH key for this login, so there's no token to read"
+    : undefined;
 }
 
 /**
@@ -501,6 +638,10 @@ interface LoginFacts {
   readonly expiresAt?: number;
   /** Why the entry is never checked. */
   readonly note?: string | undefined;
+  /** The CLI's own verdict on a login it checks itself. `verify` leaves such a login alone. */
+  readonly checked?: Pick<CredentialInfo, "state" | "note">;
+  /** Why there is no token, when the CLI's records say. */
+  readonly missingReason?: string;
 }
 
 /**
@@ -509,7 +650,6 @@ interface LoginFacts {
  * @returns {Candidate} The entry, expired when its recorded expiry has passed.
  */
 function loginCandidate(facts: LoginFacts): Candidate {
-  const expired = facts.expiresAt !== undefined && facts.expiresAt <= Date.now();
   const missing = facts.token === null;
   return {
     info: compact<CredentialInfo>({
@@ -518,14 +658,26 @@ function loginCandidate(facts: LoginFacts): Candidate {
       source: facts.found ?? "config",
       origin: facts.origin,
       active: facts.active && !missing,
-      state: expired ? "expired" : "unchecked",
+      state: loginState(facts),
       account: facts.account,
       expiresAt: facts.expiresAt,
-      note: missing ? "the CLI records this login, but no token could be read" : facts.note,
+      note: missing
+        ? (facts.missingReason ?? "the CLI records this login, but no token could be read")
+        : (facts.checked?.note ?? facts.note),
     }),
-    token: facts.token ?? undefined,
+    token: facts.checked === undefined ? (facts.token ?? undefined) : undefined,
     verifyUrl: facts.verifyUrl,
   };
+}
+
+/**
+ * Expired past the recorded expiry, otherwise the CLI's own verdict, otherwise unchecked.
+ * @param facts - What the config and the CLI say about it.
+ * @returns {CredentialState} The state.
+ */
+function loginState(facts: LoginFacts): CredentialState {
+  if (facts.expiresAt !== undefined && facts.expiresAt <= Date.now()) return "expired";
+  return facts.checked?.state ?? "unchecked";
 }
 
 /**

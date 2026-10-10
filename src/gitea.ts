@@ -5,7 +5,7 @@ import type { CredentialInfo, ListOptions } from "./core/types.ts";
 export type { ForgeCredential, ForgeOptions } from "./core/forge.ts";
 
 /**
- * Find a Gitea token: the explicit one, then GITEA_TOKEN, then `tea/config.yml`, since tea prints no token.
+ * Find a Gitea token: the explicit one, GITEA_TOKEN, tea's credential helper, `tea/config.yml`.
  * @param options - Explicit token, self-hosted URL and account.
  * @returns {ForgeCredential | null} The token and its source, or null when nothing holds one.
  */
@@ -15,7 +15,7 @@ export function resolve(options?: ForgeOptions): ForgeCredential | null {
 
 /**
  * Describe every gitea credential this machine holds, without the tokens: each token
- * variable, then each CLI login. `verify` asks the forge about each one, on its own host.
+ * variable, then each tea login. `verify` asks the forge, and tea answers for an OAuth login.
  * @param options - Whether to ask the forge.
  * @returns {Promise<CredentialInfo[]>} One entry per credential.
  */
