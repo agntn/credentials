@@ -6,9 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { listTool } from "../src/tools.ts";
 import { loadPiExtension } from "./fixtures/pi-host.ts";
 
-const extensionPath = fileURLToPath(
-  new URL("../packages/pi/extensions/credentials.ts", import.meta.url),
-);
+const extensionPath = fileURLToPath(new URL("../extensions/pi/credentials.ts", import.meta.url));
 
 afterEach(() => {
   vi.unstubAllEnvs();
