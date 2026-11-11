@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 import pkg from "../package.json" with { type: "json" };
 import * as root from "../src/index.ts";
+import * as azureDevOps from "../src/azure-devops.ts";
 import * as bitbucket from "../src/bitbucket.ts";
 import * as cloudflare from "../src/cloudflare.ts";
 import * as gitea from "../src/gitea.ts";
@@ -21,7 +22,16 @@ describe("@agntn/credentials", () => {
   });
 
   it("gives every service subpath resolve and list", () => {
-    for (const service of [bitbucket, cloudflare, gitea, gitee, github, gitlab, sourcehut]) {
+    for (const service of [
+      azureDevOps,
+      bitbucket,
+      cloudflare,
+      gitea,
+      gitee,
+      github,
+      gitlab,
+      sourcehut,
+    ]) {
       expect(Object.keys(service).sort()).toEqual(["list", "resolve"]);
     }
   });

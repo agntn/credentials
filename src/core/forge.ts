@@ -9,7 +9,8 @@
  *      print no token, so for Gitea and Sourcehut the file is the only step)
  *
  * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
- * Bitbucket, which has no official CLI at all.
+ * Bitbucket, which has no official CLI at all, and Azure DevOps, which keeps its login
+ * in the keyring.
  */
 
 import { execFileSync } from "node:child_process";
@@ -19,20 +20,29 @@ import { join } from "node:path";
 import { hutInstanceFor, hutInstances, hutToken } from "./hut.ts";
 import type { CredentialSource } from "./types.ts";
 
-export type Forge = "github" | "gitlab" | "gitea" | "gitee" | "sourcehut" | "bitbucket";
+export type Forge =
+  | "github"
+  | "gitlab"
+  | "gitea"
+  | "gitee"
+  | "sourcehut"
+  | "bitbucket"
+  | "azure-devops";
 
 /** A forge token and the step of the chain that found it. */
 export interface ForgeCredential {
   readonly token: string;
   readonly source: CredentialSource;
-  /** Basic auth login sent with the token, when the forge wants one. */
+  /** Basic auth login sent with the token, empty on Azure DevOps. */
   readonly username?: string;
+  /** Azure DevOps: the organization URL the token is for. */
+  readonly organization?: string;
 }
 
 export interface ForgeOptions {
   /** Wins over everything else, even as an empty string, which asks for anonymous access. */
   readonly token?: string;
-  /** API or web URL of a self-hosted instance; its hostname picks the CLI login. */
+  /** Instance URL whose host picks the CLI login, or on Azure DevOps the organization. */
   readonly baseURL?: string;
   /**
    * Login to read instead of the active one. Only `gh` can pick among several logins,
@@ -50,6 +60,7 @@ export const DEFAULT_HOSTS: Record<Forge, string> = {
   gitee: "gitee.com",
   sourcehut: "sr.ht",
   bitbucket: "bitbucket.org",
+  "azure-devops": "dev.azure.com",
 };
 
 export const ENV_KEYS: Record<Forge, readonly string[]> = {
@@ -61,6 +72,8 @@ export const ENV_KEYS: Record<Forge, readonly string[]> = {
   sourcehut: ["SRHT_TOKEN"],
   /** Access tokens go out as a bearer, API tokens need their email. */
   bitbucket: ["BITBUCKET_TOKEN", "BITBUCKET_API_TOKEN"],
+  /** The one `az devops` reads. */
+  "azure-devops": ["AZURE_DEVOPS_EXT_PAT"],
 };
 
 /** Token variables that only work with a login beside them. */
@@ -155,6 +168,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
     case "gitee":
     case "sourcehut":
     case "bitbucket":
+    case "azure-devops":
       return null;
   }
 }
@@ -217,6 +231,7 @@ function fromConfig(forge: Forge, hostname: string, account?: string): string | 
         return readTeaConfig(hostname);
       case "gitee":
       case "bitbucket":
+      case "azure-devops":
         return null;
       case "sourcehut":
         return readHutConfig(hostname);

@@ -41,6 +41,10 @@ const tokens = new Set([
   "BITBUCKET_TOKEN",
   "BITBUCKET_API_TOKEN",
   "BITBUCKET_EMAIL",
+  "AZURE_DEVOPS_EXT_PAT",
+  "AZURE_DEVOPS_EXT__DEFAULTS_ORGANIZATION",
+  "AZURE_DEVOPS_EXT_CONFIG_DIR",
+  "AZURE_DEVOPS_EXT__CONFIG_DIR",
   "CLOUDFLARE_API_TOKEN",
   "AGNTN_CLOUDFLARE_ACCOUNT_ID",
   "CLOUDFLARE_ACCOUNT_ID",
@@ -55,6 +59,7 @@ const env = {
   TERM: "xterm-256color",
   PATH: isolated,
   XDG_CONFIG_HOME: isolated,
+  AZURE_CONFIG_DIR: isolated,
 };
 
 function run(...args: readonly string[]) {
@@ -110,7 +115,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, cloudflare\n",
     });
   });
 
@@ -131,7 +136,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, cloudflare\n",
     });
     expect(run("mcp", "--stdio")).toMatchObject({
       code: 1,

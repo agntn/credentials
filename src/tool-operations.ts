@@ -8,6 +8,7 @@
  */
 
 import { sanitizeLine, ToolInputError } from "@agntn/tools";
+import { list as listAzureDevOps } from "./azure-devops.ts";
 import { list as listBitbucket } from "./bitbucket.ts";
 import { list as listCloudflare } from "./cloudflare.ts";
 import type { CredentialInfo, Service } from "./core/types.ts";
@@ -48,6 +49,7 @@ const LISTERS: Record<
   gitee: listGitee,
   sourcehut: listSourcehut,
   bitbucket: listBitbucket,
+  "azure-devops": listAzureDevOps,
   cloudflare: listCloudflare,
 };
 
@@ -59,6 +61,7 @@ const SETUP: Record<Service, string> = {
   gitee: "set GITEE_TOKEN or GITEE_ACCESS_TOKEN",
   sourcehut: "set SRHT_TOKEN or run hut init",
   bitbucket: "set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL",
+  "azure-devops": "set AZURE_DEVOPS_EXT_PAT",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };
 
