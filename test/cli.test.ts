@@ -45,6 +45,9 @@ const tokens = new Set([
   "AZURE_DEVOPS_EXT__DEFAULTS_ORGANIZATION",
   "AZURE_DEVOPS_EXT_CONFIG_DIR",
   "AZURE_DEVOPS_EXT__CONFIG_DIR",
+  "PUSHIN_TOKEN",
+  "PUSHIN_URL",
+  "PUN_CONFIG_DIR",
   "CLOUDFLARE_API_TOKEN",
   "AGNTN_CLOUDFLARE_ACCOUNT_ID",
   "CLOUDFLARE_ACCOUNT_ID",
@@ -115,7 +118,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cloudflare\n",
     });
   });
 
@@ -136,7 +139,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cloudflare\n",
     });
     expect(run("mcp", "--stdio")).toMatchObject({
       code: 1,

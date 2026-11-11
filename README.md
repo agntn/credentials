@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Eight services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Nine services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Every package that talks to GitHub or Cloudflare ends up with its own token hunt
 ## ✨ Features
 
 - 🔗 **One chain, every service.** Explicit value, then env, then the CLI, then its config file.
-- 🐙 **GitHub, GitLab, Gitea, Sourcehut.** `gh`, `glab`, `tea` and `hut` logins work as they are.
+- 🐙 **GitHub, GitLab, Gitea, Sourcehut, Pushin.** `gh`, `glab`, `tea`, `hut` and `pun` logins work as they are.
 - 👥 **Pick a GitHub account.** Got two `gh` logins? Name one. The active login stays put.
 - 🏠 **Self-hosted hosts.** Pass a `baseURL` and the CLI login for that host is used.
 - ☁️ **Cloudflare without an API token.** The `cf` OAuth session is enough. It's read again once it expires.
@@ -46,6 +46,7 @@ gitee: nothing found (set GITEE_TOKEN or GITEE_ACCESS_TOKEN)
 sourcehut: nothing found (set SRHT_TOKEN or run hut init)
 bitbucket: nothing found (set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL)
 azure-devops: nothing found (set AZURE_DEVOPS_EXT_PAT)
+pushin: nothing found (set PUSHIN_TOKEN or run pun login)
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
 
@@ -94,6 +95,7 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/sourcehut`    | `SRHT_TOKEN`                                                    | `hut/config`                                   |
 | `@agntn/credentials/bitbucket`    | `BITBUCKET_TOKEN`, `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL` | none                                           |
 | `@agntn/credentials/azure-devops` | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops` PAT file, default organization     |
+| `@agntn/credentials/pushin`       | `PUSHIN_TOKEN`                                                  | `pun/hosts.json`                               |
 | `@agntn/credentials/cloudflare`   | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                 |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
@@ -111,6 +113,10 @@ Keyring was plan A. Plan B is a text file. On a headless box, plan B can be the 
 `resolve()` prefers the organization's PAT, then one saved without an organization. A `baseURL` outside Azure DevOps gets nothing from the file. `resolve()` returns `username: ""` for basic auth and `organization` from `baseURL` or the default `az devops configure` saved. Any URL under the organization works.
 
 `list({ verify: true })` checks the organization's `connectionData`, the same check `az devops login` runs. An organization with public projects answers a bad PAT with HTTP 200: "Come in, Anonymous." That's a rejection. Without an organization, the PAT is never sent.
+
+Pushin slots into the same chain as the rest: an explicit token, then `PUSHIN_TOKEN`, then whatever `pun login` saved. The package reads `pun/hosts.json` directly. `pun auth token` would only hand back the same token from the same file, so that subprocess is pure ceremony.
+
+`resolve()` picks a saved token by the origin of `baseURL`, pushin.eu by default. `PUSHIN_URL` doesn't move that choice, so your company instance's token never lands on pushin.eu. `list({ verify: true })` checks each token as a bearer at `/api/v1/user`, where `pun` sends it: `PUSHIN_URL` for `PUSHIN_TOKEN`, the saved URL for each login.
 
 Cloudflare throws `CredentialsError` with code `"token"` when there's no usable token, or `"account"` when there's a token but no single account id. Branch on `code`, not the message. The message is for humans, and its wording can change. Matching its text is a brittle old habit: a wording fix could silently turn a config error into an auth error.
 

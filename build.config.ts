@@ -14,6 +14,7 @@ export default defineBuildConfig({
         "./src/gitee.ts",
         "./src/github.ts",
         "./src/gitlab.ts",
+        "./src/pushin.ts",
         "./src/sourcehut.ts",
         "./src/cli.ts",
         "./src/ai.ts",

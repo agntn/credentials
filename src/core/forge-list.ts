@@ -34,6 +34,7 @@ import {
 } from "./azure-devops.ts";
 import { compact, epoch, isRecord, nonEmptyString } from "./fields.ts";
 import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutToken } from "./hut.ts";
+import { httpOrigin, PUSHIN_ORIGIN, punLoginFor, punLogins } from "./pun.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
 import { field, type Probe, type ProbeRequest, probe } from "./verify.ts";
 
@@ -162,7 +163,16 @@ function envNote(facts: EnvFacts, credential: ForgeCredential | undefined): stri
 function envVerifyUrl(forge: Forge, host: string | undefined): string | undefined {
   if (host === undefined || forge === "sourcehut") return undefined;
   if (forge === "azure-devops") return `${host}/_apis/connectionData`;
+  if (forge === "pushin") return `${pushinUrl().replace(/\/+$/, "")}/api/v1/user`;
   return forge === "gitee" ? `${giteeApiBase()}/user` : userEndpoint(forge, `https://${host}`);
+}
+
+/**
+ * Where pun sends PUSHIN_TOKEN: `PUSHIN_URL`, or pushin.eu.
+ * @returns {string} The instance URL, as set.
+ */
+function pushinUrl(): string {
+  return process.env.PUSHIN_URL || PUSHIN_ORIGIN;
 }
 
 /**
@@ -176,21 +186,47 @@ function giteeApiBase(): string {
 /**
  * The host a forge's own CLI sends its token variable to. Gitea and Sourcehut have no such
  * CLI convention, so `GITEA_TOKEN` and `SRHT_TOKEN` have no host to be checked against.
- * Gitee's is the host of `GITEE_API_BASE`, when it has one.
+ * Gitee's is the host of `GITEE_API_BASE`, and Pushin's of `PUSHIN_URL`, when it has one.
  * Azure DevOps' is its default organization.
  * @param forge - The forge.
  * @returns {string | undefined} The host, or undefined when the variable names none.
  */
 function envHost(forge: Forge): string | undefined {
   if (forge === "gitea" || forge === "sourcehut") return undefined;
-  if (forge === "gitee") return hostnameOfUrl(giteeApiBase()) || undefined;
-  if (forge === "azure-devops") return defaultOrganization();
+  const paired = PAIRED_HOSTS[forge];
+  if (paired !== undefined) return paired();
   if (forge === "gitlab") {
     const configured = process.env.GITLAB_HOST;
     if (configured) return hostnameOfUrl(configured) ?? configured;
   }
   return DEFAULT_HOSTS[forge];
 }
+
+/** Forges whose token variable goes wherever another variable points. */
+const PAIRED_HOSTS: Partial<Record<Forge, () => string | undefined>> = {
+  gitee: () => hostnameOfUrl(giteeApiBase()) || undefined,
+  "azure-devops": defaultOrganization,
+  pushin: pushinHost,
+};
+
+/**
+ * The host of `PUSHIN_URL`, port included.
+ * @returns {string | undefined} The host, or undefined for a non-http URL.
+ */
+function pushinHost(): string | undefined {
+  const origin = httpOrigin(pushinUrl());
+  return origin === undefined ? undefined : new URL(origin).host;
+}
+
+/** Readers for the logins each forge CLI saves. */
+const LOGIN_READERS: Partial<Record<Forge, (envWins: boolean) => Candidate[]>> = {
+  github: ghLogins,
+  gitlab: glabLogins,
+  gitea: teaLogins,
+  sourcehut: hutLogins,
+  "azure-devops": azureDevOpsLogins,
+  pushin: punLoginCandidates,
+};
 
 /**
  * The logins the forge CLI keeps, from its config file.
@@ -200,21 +236,7 @@ function envHost(forge: Forge): string | undefined {
  */
 function loginCandidates(forge: Forge, envWins: boolean): Candidate[] {
   try {
-    switch (forge) {
-      case "github":
-        return ghLogins(envWins);
-      case "gitlab":
-        return glabLogins(envWins);
-      case "gitea":
-        return teaLogins(envWins);
-      case "gitee":
-      case "bitbucket":
-        return [];
-      case "azure-devops":
-        return azureDevOpsLogins(envWins);
-      case "sourcehut":
-        return hutLogins(envWins);
-    }
+    return LOGIN_READERS[forge]?.(envWins) ?? [];
   } catch {
     // No config file means no logins.
     return [];
@@ -374,6 +396,26 @@ function azureDevOpsLogins(envWins: boolean): Candidate[] {
   });
 }
 
+/**
+ * Logins in pun's `hosts.json`, checked where pun sends them.
+ * @param envWins - Whether PUSHIN_TOKEN wins over every login.
+ * @returns {Candidate[]} One entry per saved instance.
+ */
+function punLoginCandidates(envWins: boolean): Candidate[] {
+  const logins = punLogins();
+  return logins.map((login) =>
+    loginCandidate({
+      forge: "pushin",
+      host: new URL(login.origin).host,
+      active: !envWins && punLoginFor(logins, login.origin) === login,
+      found: "config",
+      origin: "pun hosts.json",
+      token: login.token,
+      verifyUrl: `${login.base}/api/v1/user`,
+    }),
+  );
+}
+
 interface LoginFacts {
   readonly forge: Forge;
   readonly host: string;
@@ -423,7 +465,7 @@ function loginCandidate(facts: LoginFacts): Candidate {
  * @returns {string} The `/user` endpoint.
  */
 function userEndpoint(
-  forge: Exclude<Forge, "sourcehut" | "gitee" | "azure-devops">,
+  forge: Exclude<Forge, "sourcehut" | "gitee" | "azure-devops" | "pushin">,
   origin: string,
 ): string {
   const base = origin.replace(/\/+$/, "");
@@ -522,7 +564,7 @@ function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
 }
 
 /**
- * Read the user out of a forge's answer: `login` on GitHub and Gitee, `username` on GitLab,
+ * Read the user out of a forge's answer: `login` on GitHub, Gitee and Pushin, `username` on GitLab,
  * Gitea and Bitbucket, `data.me.canonicalName` (`~name`) from Sourcehut's GraphQL.
  * @param forge - The forge that answered.
  * @param body - The parsed body.

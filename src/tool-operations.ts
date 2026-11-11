@@ -16,6 +16,7 @@ import { list as listGitea } from "./gitea.ts";
 import { list as listGitee } from "./gitee.ts";
 import { list as listGithub } from "./github.ts";
 import { list as listGitlab } from "./gitlab.ts";
+import { list as listPushin } from "./pushin.ts";
 import { list as listSourcehut } from "./sourcehut.ts";
 import { SERVICES } from "./tool-contract.ts";
 
@@ -50,6 +51,7 @@ const LISTERS: Record<
   sourcehut: listSourcehut,
   bitbucket: listBitbucket,
   "azure-devops": listAzureDevOps,
+  pushin: listPushin,
   cloudflare: listCloudflare,
 };
 
@@ -62,6 +64,7 @@ const SETUP: Record<Service, string> = {
   sourcehut: "set SRHT_TOKEN or run hut init",
   bitbucket: "set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL",
   "azure-devops": "set AZURE_DEVOPS_EXT_PAT",
+  pushin: "set PUSHIN_TOKEN or run pun login",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };
 
