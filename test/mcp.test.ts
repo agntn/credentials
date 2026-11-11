@@ -48,6 +48,14 @@ describe("credentials MCP server", () => {
     });
   });
 
+  it("takes no host, so a model can't aim a token anywhere new", async () => {
+    const client = await connectTestClient();
+
+    const { tools } = await client.listTools();
+
+    expect(Object.keys(tools[0]?.inputSchema.properties ?? {})).toEqual(["service", "verify"]);
+  });
+
   it("lists what the environment holds without the token", async () => {
     vi.stubEnv("GH_TOKEN", "gho_mcp_secret");
     const client = await connectTestClient();
