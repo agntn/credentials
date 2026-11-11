@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, globSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
@@ -40,5 +40,14 @@ describe("a release", () => {
   /** uppt only runs `pnpm pack`, so without this the tarball ships no `dist/`. */
   it("builds dist/ when packing", () => {
     expect(manifest.scripts.prepack).toBe("pnpm run build");
+  });
+
+  /** A map that pins a throw on a lone `}` is worse than none, so the build makes none. */
+  it.skipIf(!existsSync(join(root, "dist")))("ships no source maps", () => {
+    const pointers = globSync("dist/**/*.{mjs,d.mts}", { cwd: root }).filter((file) =>
+      read(file).includes("sourceMappingURL"),
+    );
+
+    expect([...globSync("dist/**/*.map", { cwd: root }), ...pointers]).toEqual([]);
   });
 });
