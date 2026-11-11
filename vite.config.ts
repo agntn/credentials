@@ -3,7 +3,7 @@ import oxlint from "@agntn/ox/oxlint";
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
-  fmt: { ...oxfmt, ignorePatterns: ["dist", "/CHANGELOG.md"] },
+  fmt: { ...oxfmt, ignorePatterns: ["dist"] },
   lint: {
     ...oxlint,
     rules: {

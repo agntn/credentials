@@ -9,26 +9,36 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 const manifest = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
 
-/** Each way a release runs the tests, so a release never ships a build its tests did not see. */
-const releaseSteps: Record<string, readonly string[]> = {
-  "the Publish workflow": [
-    ...read(".github/workflows/publish.yml").matchAll(/^\s*- run: (.+)$/gmu),
-  ].map((match) => match[1] ?? ""),
-  "pnpm release": manifest.scripts.release?.split(" && ") ?? [],
-};
+const workflow = read(".github/workflows/release.yml");
+
+/**
+ * One job of `release.yml`, from its key to the next job's.
+ * @param name - The job's key.
+ * @returns {string} Its lines, so a step or `needs` of another job never counts.
+ */
+function job(name: string): string {
+  const start = workflow.indexOf(`\n  ${name}:\n`);
+  if (start === -1) throw new Error(`release.yml has no ${name} job`);
+  const next = workflow.slice(start + 1).search(/\n {2}[a-z]+:\n/u);
+  return next === -1 ? workflow.slice(start) : workflow.slice(start, start + 1 + next);
+}
+
+/** The tag's test job, whose `credentials mcp` checks start the built bin. */
+const testSteps = [...job("test").matchAll(/^\s*- run: (.+)$/gmu)].map((match) => match[1] ?? "");
 
 describe("a release", () => {
-  it.each(Object.entries(releaseSteps))("builds before the tests in %s", (_, steps) => {
-    expect(steps).toContain("pnpm build");
-    expect(steps.indexOf("pnpm build")).toBeLessThan(steps.indexOf("pnpm test"));
+  it("builds before the tests on the tag", () => {
+    expect(testSteps).toContain("pnpm build");
+    expect(testSteps.indexOf("pnpm build")).toBeLessThan(testSteps.indexOf("pnpm test"));
   });
 
-  /** A bare `inputs.tag` would also check out a branch, such as `main` after the version bump. */
-  it("checks out only a tag on a manual dispatch", () => {
-    const refs = [...read(".github/workflows/publish.yml").matchAll(/^\s*ref: (.+)$/gmu)];
+  it("packs only after the tests and publishes only that pack", () => {
+    expect(job("pack")).toMatch(/^ {4}needs: test$/mu);
+    expect(job("publish")).toMatch(/^ {4}needs: pack$/mu);
+  });
 
-    expect(refs.map((match) => match[1])).toEqual([
-      "${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}",
-    ]);
+  /** uppt only runs `pnpm pack`, so without this the tarball ships no `dist/`. */
+  it("builds dist/ when packing", () => {
+    expect(manifest.scripts.prepack).toBe("pnpm run build");
   });
 });
