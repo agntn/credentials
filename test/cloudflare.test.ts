@@ -273,6 +273,17 @@ describe("cloudflare.resolve", () => {
     expect(execFile).toHaveBeenCalledTimes(1);
   });
 
+  it("gives a caller with a signal the same error when cf fails", async () => {
+    cf.whoami = { authenticated: false, error: "Not logged in" };
+    const { resolve } = await load();
+
+    const error = await resolve({ signal: new AbortController().signal }).catch(
+      (failure: unknown) => failure,
+    );
+    expect(error).toMatchObject({ name: "CredentialsError", code: "token" });
+    expect(messages(error)).toContain("cf CLI is not logged in");
+  });
+
   it("asks cf again after a failed attempt", async () => {
     cf.whoami = { authenticated: false, error: "Not logged in" };
     const { resolve } = await load();
