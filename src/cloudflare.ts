@@ -33,6 +33,8 @@ export interface CloudflareOptions {
    * for a caller whose request was just refused with 401.
    */
   readonly refresh?: boolean;
+  /** Stops this caller's wait. cf itself runs on. */
+  readonly signal?: AbortSignal;
 }
 
 /** An account id and the setting it came from. */
@@ -65,9 +67,10 @@ let cfSessionPromise: Promise<CfSession> | undefined;
  *
  * A token from cf is fetched again once it expires, so keep the result for one
  * request, not for the life of a client.
- * @param options - Explicit token and account, and whether to bypass the cf cache.
+ * @param options - Explicit token and account, cache bypass, and a signal to stop waiting.
  * @returns {Promise<CloudflareCredential>} Credentials valid for the next request.
  * @throws {CredentialsError} When no token or no single account can be found.
+ * @throws {unknown} The signal's reason, when it aborts before cf answers.
  */
 export async function resolve(options?: CloudflareOptions): Promise<CloudflareCredential> {
   const accountId = configuredAccount(options);
@@ -81,7 +84,7 @@ export async function resolve(options?: CloudflareOptions): Promise<CloudflareCr
     return { ...given, accountId };
   }
 
-  const session = await getCfSession(options?.refresh === true);
+  const session = await getCfSession(options?.refresh === true, options?.signal);
   return {
     token: session.token,
     accountId: accountId ?? onlyAccount(session.accountIds),
@@ -131,7 +134,8 @@ function envValue(name: string): string | undefined {
   return nonEmpty(process.env[name]);
 }
 
-function getCfSession(refresh: boolean): Promise<CfSession> {
+function getCfSession(refresh: boolean, signal?: AbortSignal): Promise<CfSession> {
+  signal?.throwIfAborted();
   const cached = cfSession;
   if (
     !refresh &&
@@ -148,7 +152,23 @@ function getCfSession(refresh: boolean): Promise<CfSession> {
     .finally(() => {
       cfSessionPromise = undefined;
     });
-  return cfSessionPromise;
+  return signal === undefined ? cfSessionPromise : untilAborted(cfSessionPromise, signal);
+}
+
+/**
+ * Leave a shared cf run early without killing a refresh in progress.
+ * @param session - The run every concurrent caller waits on.
+ * @param signal - This caller's signal.
+ * @returns {Promise<CfSession>} The run's answer.
+ */
+function untilAborted(session: Promise<CfSession>, signal: AbortSignal): Promise<CfSession> {
+  return new Promise((resolveSession, reject) => {
+    const leave = (): void => reject(signal.reason);
+    signal.addEventListener("abort", leave, { once: true });
+    session.then(resolveSession, reject).finally(() => {
+      signal.removeEventListener("abort", leave);
+    });
+  });
 }
 
 /**

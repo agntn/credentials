@@ -37,6 +37,29 @@ function stubCf(): void {
   }) as unknown as typeof execFile);
 }
 
+/* Hold each `cf auth whoami` until the test answers it. */
+function holdCf(): { answer: () => void; signals: unknown[] } {
+  const answers: (() => void)[] = [];
+  const signals: unknown[] = [];
+  vi.mocked(execFile).mockImplementation(((...args: unknown[]) => {
+    const [, , options, callback] = args as [
+      string,
+      string[],
+      { signal?: AbortSignal },
+      (error: Error | null, stdout: string, stderr: string) => void,
+    ];
+    signals.push(options.signal);
+    answers.push(() => {
+      writeFileSync(
+        credentialsFile,
+        JSON.stringify({ oauth_token: cf.token, expiration_time: cf.expiresAt, scopes: [] }),
+      );
+      callback(null, JSON.stringify(cf.whoami), "");
+    });
+  }) as unknown as typeof execFile);
+  return { answer: () => answers.at(-1)?.(), signals };
+}
+
 function loggedIn(accounts: string[]): Record<string, unknown> {
   return {
     authenticated: true,
@@ -207,6 +230,58 @@ describe("cloudflare.resolve", () => {
 
     expect(results.map((result) => result.token)).toEqual(["oauth-1", "oauth-1"]);
     expect(execFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses an aborted signal before asking cf", async () => {
+    const { resolve } = await load();
+
+    await expect(resolve({ signal: AbortSignal.abort() })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  it("lets one caller stop waiting while cf keeps running for the other", async () => {
+    const cfRun = holdCf();
+    const { resolve } = await load();
+    const controller = new AbortController();
+
+    const leaving = resolve({ signal: controller.signal });
+    const staying = resolve();
+    controller.abort(new Error("request cancelled"));
+
+    await expect(leaving).rejects.toThrow("request cancelled");
+    cfRun.answer();
+    await expect(staying).resolves.toMatchObject({ token: "oauth-1" });
+    expect(execFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("never stops cf while it refreshes, and hands its answer to whoever asks next", async () => {
+    const cfRun = holdCf();
+    const { resolve } = await load();
+    const controller = new AbortController();
+
+    const leaving = resolve({ signal: controller.signal });
+    controller.abort();
+    await expect(leaving).rejects.toMatchObject({ name: "AbortError" });
+
+    const next = resolve();
+    cfRun.answer();
+    await expect(next).resolves.toMatchObject({ token: "oauth-1" });
+    expect(cfRun.signals).toEqual([undefined]);
+    await expect(resolve()).resolves.toMatchObject({ token: "oauth-1" });
+    expect(execFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a caller with a signal the same error when cf fails", async () => {
+    cf.whoami = { authenticated: false, error: "Not logged in" };
+    const { resolve } = await load();
+
+    const error = await resolve({ signal: new AbortController().signal }).catch(
+      (failure: unknown) => failure,
+    );
+    expect(error).toMatchObject({ name: "CredentialsError", code: "token" });
+    expect(messages(error)).toContain("cf CLI is not logged in");
   });
 
   it("asks cf again after a failed attempt", async () => {
