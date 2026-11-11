@@ -16,6 +16,8 @@ export default defineBuildConfig({
         "./src/mcp.ts",
         "./src/tools.ts",
       ],
+      /** No maps: the JS ones miss every throw, the type ones point at a src/ we don't ship. */
+      dts: { sourcemap: false },
     },
   ],
 });
