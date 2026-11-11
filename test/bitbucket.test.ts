@@ -24,16 +24,26 @@ describe("bitbucket.resolve", () => {
     vi.stubEnv("BITBUCKET_API_TOKEN", "ATATT-api");
     vi.stubEnv("BITBUCKET_EMAIL", "ori@example.com");
 
-    expect(resolve()).toEqual({ token: "ATATT-api", source: "env", username: "ori@example.com" });
+    expect(resolve()).toEqual({
+      token: "ATATT-api",
+      source: "env",
+      origin: "BITBUCKET_API_TOKEN",
+      username: "ori@example.com",
+    });
     vi.stubEnv("BITBUCKET_TOKEN", "ATCTT-access");
-    expect(resolve()).toEqual({ token: "ATCTT-access", source: "env" });
-    expect(resolve({ token: "mine" })).toEqual({ token: "mine", source: "explicit" });
+    expect(resolve()).toEqual({ token: "ATCTT-access", source: "env", origin: "BITBUCKET_TOKEN" });
+    expect(resolve({ token: "mine" })).toEqual({
+      token: "mine",
+      source: "explicit",
+      origin: "token",
+    });
   });
 
   it("hands an explicit username back beside the explicit token", () => {
     expect(resolve({ token: "ATATT-api", username: "ori@example.com" })).toEqual({
       token: "ATATT-api",
       source: "explicit",
+      origin: "token",
       username: "ori@example.com",
     });
     expect(resolve({ username: "ori@example.com" })).toBeNull();
@@ -51,7 +61,7 @@ describe("bitbucket.resolve", () => {
     vi.stubEnv("BITBUCKET_API_TOKEN", "never-reached");
     vi.stubEnv("BITBUCKET_EMAIL", "ori@example.com");
 
-    expect(resolve()).toEqual({ token: "", source: "env" });
+    expect(resolve()).toEqual({ token: "", source: "env", origin: "BITBUCKET_TOKEN" });
   });
 
   it("finds nothing without a variable, since Bitbucket has no CLI login to read", () => {

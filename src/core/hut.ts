@@ -90,6 +90,17 @@ export function hutToken(instance: HutInstance): string | null {
 }
 
 /**
+ * Where `hutToken` gets the token.
+ * @param instance - The instance.
+ * @returns {string} `hut config` or `hut access-token-cmd`.
+ */
+export function hutOrigin(instance: HutInstance): string {
+  return instance.token === undefined && instance.command !== undefined
+    ? "hut access-token-cmd"
+    : "hut config";
+}
+
+/**
  * The meta.sr.ht GraphQL endpoint of an instance, which names the token's user.
  * @param instance - The instance.
  * @returns {string} Its `/query` URL.

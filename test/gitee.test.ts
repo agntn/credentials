@@ -17,10 +17,18 @@ describe("gitee.resolve", () => {
   it("takes the explicit token, then GITEE_TOKEN, then GITEE_ACCESS_TOKEN", () => {
     vi.stubEnv("GITEE_ACCESS_TOKEN", "from-mcp-gitee");
 
-    expect(resolve()).toEqual({ token: "from-mcp-gitee", source: "env" });
+    expect(resolve()).toEqual({
+      token: "from-mcp-gitee",
+      source: "env",
+      origin: "GITEE_ACCESS_TOKEN",
+    });
     vi.stubEnv("GITEE_TOKEN", "from-env");
-    expect(resolve()).toEqual({ token: "from-env", source: "env" });
-    expect(resolve({ token: "mine" })).toEqual({ token: "mine", source: "explicit" });
+    expect(resolve()).toEqual({ token: "from-env", source: "env", origin: "GITEE_TOKEN" });
+    expect(resolve({ token: "mine" })).toEqual({
+      token: "mine",
+      source: "explicit",
+      origin: "token",
+    });
   });
 
   it("finds nothing without a variable, since Gitee has no CLI login to read", () => {
@@ -32,7 +40,7 @@ describe("gitee.resolve", () => {
     vi.stubEnv("GITEE_TOKEN", "");
     vi.stubEnv("GITEE_ACCESS_TOKEN", "never-reached");
 
-    expect(resolve()).toEqual({ token: "", source: "env" });
+    expect(resolve()).toEqual({ token: "", source: "env", origin: "GITEE_TOKEN" });
   });
 });
 

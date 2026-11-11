@@ -54,15 +54,30 @@ describe("azure-devops.resolve", () => {
   it("takes the explicit token, then AZURE_DEVOPS_EXT_PAT, with an empty basic auth login", () => {
     vi.stubEnv("AZURE_DEVOPS_EXT_PAT", "pat-from-env");
 
-    expect(resolve()).toEqual({ token: "pat-from-env", source: "env", username: "" });
-    expect(resolve({ token: "mine" })).toEqual({ token: "mine", source: "explicit", username: "" });
+    expect(resolve()).toEqual({
+      token: "pat-from-env",
+      source: "env",
+      origin: "AZURE_DEVOPS_EXT_PAT",
+      username: "",
+    });
+    expect(resolve({ token: "mine" })).toEqual({
+      token: "mine",
+      source: "explicit",
+      origin: "token",
+      username: "",
+    });
     expect(resolve({ token: "mine", username: "ori" })).toMatchObject({ username: "ori" });
   });
 
   it("keeps an empty AZURE_DEVOPS_EXT_PAT as anonymous access", () => {
     vi.stubEnv("AZURE_DEVOPS_EXT_PAT", "");
 
-    expect(resolve()).toEqual({ token: "", source: "env", username: "" });
+    expect(resolve()).toEqual({
+      token: "",
+      source: "env",
+      origin: "AZURE_DEVOPS_EXT_PAT",
+      username: "",
+    });
   });
 
   it("finds nothing without the variable or the file, since the keyring stays out of reach", () => {
@@ -78,6 +93,7 @@ describe("azure-devops.resolve", () => {
     expect(resolve({ baseURL: "https://dev.azure.com/Contoso/Project/_git/repo" })).toEqual({
       token: "pat-contoso",
       source: "config",
+      origin: "az devops personalAccessTokens",
       username: "",
       organization: "https://dev.azure.com/Contoso",
     });
@@ -85,7 +101,12 @@ describe("azure-devops.resolve", () => {
       "pat-fabrikam",
     );
     expect(resolve({ baseURL: "https://dev.azure.com/other" })?.token).toBe("pat-default");
-    expect(resolve()).toEqual({ token: "pat-default", source: "config", username: "" });
+    expect(resolve()).toEqual({
+      token: "pat-default",
+      source: "config",
+      origin: "az devops personalAccessTokens",
+      username: "",
+    });
   });
 
   it("picks the saved PAT of the az default organization", () => {
@@ -169,7 +190,12 @@ describe("azure-devops.resolve", () => {
     vi.stubEnv("AZURE_DEVOPS_EXT_PAT", "pat");
     azConfig("[defaults]\norganization = https://dev.azure.com/default-org\n");
 
-    expect(resolve({ baseURL })).toEqual({ token: "pat", source: "env", username: "" });
+    expect(resolve({ baseURL })).toEqual({
+      token: "pat",
+      source: "env",
+      origin: "AZURE_DEVOPS_EXT_PAT",
+      username: "",
+    });
   });
 
   it("reads the az devops config the way configparser does", () => {

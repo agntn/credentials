@@ -18,7 +18,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { hutInstanceFor, hutInstances, hutToken } from "./hut.ts";
+import { hutInstanceFor, hutInstances, hutOrigin, hutToken } from "./hut.ts";
 import { ORIGIN_HOST, originLogin } from "./origin.ts";
 import type { CredentialSource } from "./types.ts";
 
@@ -37,6 +37,8 @@ export type Forge =
 export interface ForgeCredential {
   readonly token: string;
   readonly source: CredentialSource;
+  /** The variable, CLI or file it came from, such as `GL_TOKEN`. `token` if passed in. */
+  readonly origin: string;
   /** Basic auth login sent with the token, empty on Azure DevOps. */
   readonly username?: string;
   /** Azure DevOps: the organization URL the token is for. */
@@ -86,6 +88,16 @@ export const ENV_KEYS: Record<Forge, readonly string[]> = {
   "cursor-origin": ["CURSOR_AUTH_TOKEN"],
 };
 
+/** Each CLI's login file, under the name `list` shows. */
+export const CONFIG_FILES = {
+  github: "gh hosts.yml",
+  gitlab: "glab config.yml",
+  gitea: "tea config.yml",
+  "azure-devops": "az devops personalAccessTokens",
+  pushin: "pun hosts.json",
+  "cursor-origin": "origin credentials.json",
+} as const;
+
 /** Token variables that only work with a login beside them. */
 export const ENV_USERNAMES: Readonly<Record<string, string>> = {
   BITBUCKET_API_TOKEN: "BITBUCKET_EMAIL",
@@ -103,8 +115,8 @@ export function resolveForge(forge: Forge, options?: ForgeOptions): ForgeCredent
   if (options?.token !== undefined) {
     const { token, username } = options;
     return username === undefined
-      ? { token, source: "explicit" }
-      : { token, source: "explicit", username };
+      ? { token, source: "explicit", origin: "token" }
+      : { token, source: "explicit", origin: "token", username };
   }
 
   const fromVariables = fromEnv(forge);
@@ -139,9 +151,9 @@ export function envCredential(key: string): ForgeCredential | undefined {
   const token = process.env[key];
   if (token === undefined) return undefined;
   const usernameKey = ENV_USERNAMES[key];
-  if (usernameKey === undefined || token === "") return { token, source: "env" };
+  if (usernameKey === undefined || token === "") return { token, source: "env", origin: key };
   const username = process.env[usernameKey];
-  return username ? { token, source: "env", username } : undefined;
+  return username ? { token, source: "env", origin: key, username } : undefined;
 }
 
 /**
@@ -152,10 +164,17 @@ export function envCredential(key: string): ForgeCredential | undefined {
  * @returns {ForgeCredential | null} The token, or null when neither holds one.
  */
 function fromLogin(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
-  const cliToken = fromCli(forge, hostname, account);
-  if (cliToken !== null) return { token: cliToken, source: "cli" };
-  const configToken = fromConfig(forge, hostname, account);
-  return configToken === null ? null : { token: configToken, source: "config" };
+  return fromCli(forge, hostname, account) ?? fromConfig(forge, hostname, account);
+}
+
+/**
+ * Wrap a token read from a login file.
+ * @param token - The token, or null.
+ * @param origin - The file's name.
+ * @returns {ForgeCredential | null} The credential, or null.
+ */
+export function savedCredential(token: string | null, origin: string): ForgeCredential | null {
+  return token === null ? null : { token, source: "config", origin };
 }
 
 function hostnameOf(forge: Forge, baseURL?: string): string {
@@ -164,21 +183,32 @@ function hostnameOf(forge: Forge, baseURL?: string): string {
 
 // --- CLI tools ---
 
-function fromCli(forge: Forge, hostname: string, account?: string): string | null {
+function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
   switch (forge) {
     case "github": {
       // `--user` reads one login's token without switching the active one.
       const args = ["auth", "token", "--hostname", hostname];
       if (account !== undefined) args.push(`--user=${account}`);
-      return runCli("gh", args);
+      return askCli("gh", args);
     }
     case "gitlab":
-      return runCli("glab", ["config", "get", "token", "--host", hostname]);
+      return askCli("glab", ["config", "get", "token", "--host", hostname]);
     case "cursor-origin":
-      return hostname === ORIGIN_HOST ? runCli("origin", ["auth", "token"]) : null;
+      return hostname === ORIGIN_HOST ? askCli("origin", ["auth", "token"]) : null;
     default:
       return null;
   }
+}
+
+/**
+ * Ask a CLI for its token.
+ * @param command - The CLI.
+ * @param args - Its arguments.
+ * @returns {ForgeCredential | null} The credential, or null.
+ */
+function askCli(command: ForgeCli, args: readonly string[]): ForgeCredential | null {
+  const token = runCli(command, args);
+  return token === null ? null : { token, source: "cli", origin: command };
 }
 
 /**
@@ -230,19 +260,19 @@ export function withoutVariables(names: readonly string[]): NodeJS.ProcessEnv {
 
 // --- Config files ---
 
-function fromConfig(forge: Forge, hostname: string, account?: string): string | null {
+function fromConfig(forge: Forge, hostname: string, account?: string): ForgeCredential | null {
   try {
     switch (forge) {
       case "github":
-        return readGhConfig(hostname, account);
+        return savedCredential(readGhConfig(hostname, account), CONFIG_FILES.github);
       case "gitlab":
-        return readGlabConfig(hostname);
+        return savedCredential(readGlabConfig(hostname), CONFIG_FILES.gitlab);
       case "gitea":
-        return readTeaConfig(hostname);
+        return savedCredential(readTeaConfig(hostname), CONFIG_FILES.gitea);
       case "sourcehut":
         return readHutConfig(hostname);
       case "cursor-origin":
-        return readOriginConfig(hostname);
+        return savedCredential(readOriginConfig(hostname), CONFIG_FILES["cursor-origin"]);
       default:
         return null;
     }
@@ -325,12 +355,12 @@ function readTeaConfig(hostname: string): string | null {
 /**
  * Read hut config at `hutConfigFile()`, the scfg file `hut.ts` describes.
  * @param hostname - Matched against each instance's domain, its subdomains and its service hosts.
- * @returns {string | null} The first matching instance's token, or null.
+ * @returns {ForgeCredential | null} The first matching instance's token, or null.
  */
-function readHutConfig(hostname: string): string | null {
+function readHutConfig(hostname: string): ForgeCredential | null {
   const content = readFileSync(hutConfigFile(), "utf-8");
   const instance = hutInstanceFor(hutInstances(content), hostname);
-  return instance === undefined ? null : hutToken(instance);
+  return instance === undefined ? null : savedCredential(hutToken(instance), hutOrigin(instance));
 }
 
 /**

@@ -5,7 +5,13 @@ import {
   storedPats,
 } from "./core/azure-devops.ts";
 import { compact } from "./core/fields.ts";
-import { type ForgeCredential, type ForgeOptions, resolveForge } from "./core/forge.ts";
+import {
+  CONFIG_FILES,
+  type ForgeCredential,
+  type ForgeOptions,
+  resolveForge,
+  savedCredential,
+} from "./core/forge.ts";
 import { listForge } from "./core/forge-list.ts";
 import type { CredentialInfo, ListOptions } from "./core/types.ts";
 
@@ -41,7 +47,7 @@ function fromPatFile(
   if (options?.account !== undefined) return null;
   if (options?.baseURL && organization === undefined) return null;
   const pat = storedPatFor(storedPats(), organization);
-  return pat === undefined ? null : { token: pat.token, source: "config" };
+  return pat === undefined ? null : savedCredential(pat.token, CONFIG_FILES["azure-devops"]);
 }
 
 /**
