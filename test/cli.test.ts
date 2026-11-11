@@ -102,7 +102,7 @@ describe("credentials CLI", () => {
     expect(run("list", "nope")).toMatchObject({
       code: 1,
       stdout: "",
-      stderr: "Invalid arguments at /service: must be one of github, gitlab, gitea, cloudflare\n",
+      stderr: "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, cloudflare\n",
     });
   });
 
@@ -122,7 +122,7 @@ describe("credentials CLI", () => {
     expect(run("list", "--version")).toMatchObject({
       code: 1,
       stdout: "",
-      stderr: "Invalid arguments at /service: must be one of github, gitlab, gitea, cloudflare\n",
+      stderr: "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, cloudflare\n",
     });
     expect(run("mcp", "--stdio")).toMatchObject({
       code: 1,
