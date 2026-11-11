@@ -5,6 +5,11 @@
  *   organization = https://dev.azure.com/contoso/
  *
  * knack lets `AZURE_DEVOPS_EXT__DEFAULTS_ORGANIZATION` override it. Yes, two underscores.
+ *
+ * When the keyring breaks on Linux, `az devops login` falls back to `personalAccessTokens`:
+ *
+ *   [azdevops-cli:https://dev.azure.com/contoso]
+ *   personal access token = <pat>
  */
 
 import { readFileSync } from "node:fs";
@@ -51,35 +56,105 @@ export function defaultOrganization(): string | undefined {
  * @returns {string | undefined} The value as written.
  */
 function configuredOrganization(): string | undefined {
+  return iniFile("config").get("defaults")?.get("organization");
+}
+
+/** A PAT `az devops login` left in `personalAccessTokens`. */
+export interface StoredPat {
+  readonly token: string;
+  /** Undefined for the PAT saved without an organization. */
+  readonly organization: string | undefined;
+}
+
+const PAT_SECTION = "azdevops-cli:";
+const DEFAULT_PAT_SECTION = "azdevops-cli: default";
+
+/**
+ * List the PATs `az devops login` saved to file. Linux only, like az.
+ * @returns {StoredPat[]} One per section with a token, in file order.
+ */
+export function storedPats(): StoredPat[] {
+  if (process.platform !== "linux") return [];
+  return [...iniFile("personalAccessTokens")].flatMap(([section, values]): StoredPat[] => {
+    const token = values.get("personal access token");
+    if (!token) return [];
+    if (section === DEFAULT_PAT_SECTION) return [{ token, organization: undefined }];
+    const organization = patOrganization(section);
+    return organization === undefined ? [] : [{ token, organization }];
+  });
+}
+
+/**
+ * Take the organization from a section name, canonical or not at all.
+ * @param section - The section name.
+ * @returns {string | undefined} The organization URL, or undefined.
+ */
+function patOrganization(section: string): string | undefined {
+  if (!section.startsWith(PAT_SECTION)) return undefined;
+  const name = section.slice(PAT_SECTION.length);
+  return organizationUrl(name)?.toLowerCase() === name ? name : undefined;
+}
+
+/**
+ * Pick the organization's own PAT, then the one saved without any.
+ * @param pats - What `storedPats` found.
+ * @param organization - The organization URL, if there is one.
+ * @returns {StoredPat | undefined} The PAT, or undefined when neither is there.
+ */
+export function storedPatFor(
+  pats: readonly StoredPat[],
+  organization: string | undefined,
+): StoredPat | undefined {
+  const key = organization?.toLowerCase();
+  return (
+    pats.find((pat) => key !== undefined && pat.organization === key) ??
+    pats.find((pat) => pat.organization === undefined)
+  );
+}
+
+/**
+ * Read one file from the az devops config dir.
+ * @param name - The file name.
+ * @returns {Map<string, Map<string, string>>} Its sections, empty without the file.
+ */
+function iniFile(name: string): Map<string, Map<string, string>> {
   try {
-    const content = readFileSync(join(azureDevOpsConfigDir(), "config"), "utf-8");
-    return iniValue(content, "defaults", "organization");
+    return parseIni(readFileSync(join(azureDevOpsConfigDir(), name), "utf-8"));
   } catch {
-    return undefined;
+    return new Map();
   }
 }
 
 /**
- * Read one INI value as configparser does, minus continuations and interpolation.
+ * Parse INI like configparser, first section and key winning.
  * @param content - The file.
- * @param section - The section, matched exactly.
- * @param key - The key, lower case.
- * @returns {string | undefined} The first value.
+ * @returns {Map<string, Map<string, string>>} Keys, lower case, by section.
  */
-function iniValue(content: string, section: string, key: string): string | undefined {
-  let current: string | undefined;
+function parseIni(content: string): Map<string, Map<string, string>> {
+  const sections = new Map<string, Map<string, string>>();
+  let current: Map<string, string> | undefined;
   for (const raw of content.split(/\r?\n/)) {
     const line = raw.trim();
-    const header = /^\[(.+)\]/.exec(line);
-    if (header !== null) {
-      current = header[1];
+    const header = /^\[(.+)\]/.exec(line)?.[1];
+    if (header !== undefined) {
+      current = sections.get(header) ?? new Map<string, string>();
+      sections.set(header, current);
       continue;
     }
-    if (current !== section) continue;
-    const pair = /^(.*?)\s*[=:]\s*(.*)$/.exec(line);
-    if (pair?.[1]?.toLowerCase() === key) return pair[2];
+    const pair = iniPair(line);
+    if (current !== undefined && pair !== undefined && !current.has(pair[0])) current.set(...pair);
   }
-  return undefined;
+  return sections;
+}
+
+/**
+ * Split a `key = value` or `key: value` line.
+ * @param line - One trimmed line.
+ * @returns {[string, string] | undefined} The key in lower case and its value, or undefined.
+ */
+function iniPair(line: string): [string, string] | undefined {
+  const [, key, value] = /^(.*?)\s*[=:]\s*(.*)$/.exec(line) ?? [];
+  return key === undefined ? undefined : [key.toLowerCase(), value ?? ""];
 }
 
 /**

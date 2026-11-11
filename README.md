@@ -93,7 +93,7 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/gitee`        | `GITEE_TOKEN`, `GITEE_ACCESS_TOKEN`                             | none                                           |
 | `@agntn/credentials/sourcehut`    | `SRHT_TOKEN`                                                    | `hut/config`                                   |
 | `@agntn/credentials/bitbucket`    | `BITBUCKET_TOKEN`, `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL` | none                                           |
-| `@agntn/credentials/azure-devops` | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops configure` default organization     |
+| `@agntn/credentials/azure-devops` | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops` PAT file, default organization     |
 | `@agntn/credentials/cloudflare`   | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                 |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
@@ -104,7 +104,11 @@ Gitee has no CLI login to chase: an explicit token, then `GITEE_TOKEN`, then `GI
 
 Bitbucket tries an explicit token, `BITBUCKET_TOKEN`, then `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL`. Access and OAuth tokens use bearer auth. API tokens need email for basic auth. No email, no deal. `resolve()` skips those tokens, and `list` notes why. `list --verify` checks API tokens at `api.bitbucket.org/2.0/user`. It skips access tokens because `/user` rejects bots. A 401 there would declare a working token dead.
 
-Azure DevOps tries an explicit token, then `AZURE_DEVOPS_EXT_PAT`, the one `az devops` reads. The package doesn't read the PAT stored by `az devops login` in the system keyring. `resolve()` returns `username: ""` for basic auth and `organization` from `baseURL` or the default `az devops configure` saved. Any URL under the organization works.
+Azure DevOps tries an explicit token, then `AZURE_DEVOPS_EXT_PAT`, then a PAT file. `az devops login` saves PATs in the system keyring, and the package still can't read the keyring. But on Linux, a missing or broken keyring sends the PAT to the plain INI file `personalAccessTokens`. It's in the config dir, `~/.azure/azuredevops` by default.
+
+Keyring was plan A. Plan B is a text file. On a headless box, plan B can be the only copy, so that's a fallback worth having. `az devops` reads it whenever keyring returns nothing, and so does this package, on Linux only.
+
+`resolve()` prefers the organization's PAT, then one saved without an organization. A `baseURL` outside Azure DevOps gets nothing from the file. `resolve()` returns `username: ""` for basic auth and `organization` from `baseURL` or the default `az devops configure` saved. Any URL under the organization works.
 
 `list({ verify: true })` checks the organization's `connectionData`, the same check `az devops login` runs. An organization with public projects answers a bad PAT with HTTP 200: "Come in, Anonymous." That's a rejection. Without an organization, the PAT is never sent.
 

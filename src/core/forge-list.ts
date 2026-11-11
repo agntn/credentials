@@ -25,7 +25,13 @@ import {
   parseYamlListEntries,
   runCli,
 } from "./forge.ts";
-import { AZURE_DEVOPS_HEADERS, connectionFacts, defaultOrganization } from "./azure-devops.ts";
+import {
+  AZURE_DEVOPS_HEADERS,
+  connectionFacts,
+  defaultOrganization,
+  storedPatFor,
+  storedPats,
+} from "./azure-devops.ts";
 import { compact, epoch, isRecord, nonEmptyString } from "./fields.ts";
 import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutToken } from "./hut.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
@@ -203,8 +209,9 @@ function loginCandidates(forge: Forge, envWins: boolean): Candidate[] {
         return teaLogins(envWins);
       case "gitee":
       case "bitbucket":
-      case "azure-devops":
         return [];
+      case "azure-devops":
+        return azureDevOpsLogins(envWins);
       case "sourcehut":
         return hutLogins(envWins);
     }
@@ -340,6 +347,33 @@ function hutLogins(envWins: boolean): Candidate[] {
   );
 }
 
+/**
+ * Saved az devops PATs. One without an organization goes to the default.
+ * @param envWins - Whether AZURE_DEVOPS_EXT_PAT wins over every saved PAT.
+ * @returns {Candidate[]} One entry per saved PAT.
+ */
+function azureDevOpsLogins(envWins: boolean): Candidate[] {
+  const pats = storedPats();
+  const fallback = defaultOrganization();
+  const active = storedPatFor(pats, fallback);
+  return pats.map((pat) => {
+    const host = pat.organization ?? fallback;
+    return loginCandidate({
+      forge: "azure-devops",
+      host: host ?? "any",
+      active: !envWins && pat === active,
+      found: "config",
+      origin: "az devops personalAccessTokens",
+      token: pat.token,
+      verifyUrl: host === undefined ? undefined : `${host}/_apis/connectionData`,
+      note:
+        host === undefined
+          ? "this PAT has no organization (set one with az devops configure --defaults), so it is never sent anywhere to check"
+          : undefined,
+    });
+  });
+}
+
 interface LoginFacts {
   readonly forge: Forge;
   readonly host: string;
@@ -349,8 +383,11 @@ interface LoginFacts {
   readonly found: CredentialSource | undefined;
   readonly origin: string;
   readonly token: string | null;
-  readonly verifyUrl: string;
+  /** Undefined when there's no host to check it on. */
+  readonly verifyUrl: string | undefined;
   readonly expiresAt?: number;
+  /** Why the entry is never checked. */
+  readonly note?: string | undefined;
 }
 
 /**
@@ -371,7 +408,7 @@ function loginCandidate(facts: LoginFacts): Candidate {
       state: expired ? "expired" : "unchecked",
       account: facts.account,
       expiresAt: facts.expiresAt,
-      note: missing ? "the CLI records this login, but no token could be read" : undefined,
+      note: missing ? "the CLI records this login, but no token could be read" : facts.note,
     }),
     token: facts.token ?? undefined,
     verifyUrl: facts.verifyUrl,

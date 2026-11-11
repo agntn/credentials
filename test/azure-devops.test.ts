@@ -20,6 +20,20 @@ function azConfig(content: string, variable = "AZURE_DEVOPS_EXT_CONFIG_DIR"): st
   return dir;
 }
 
+/* Write what az devops login falls back to without a keyring, as configparser writes it. */
+function patFile(dir: string, pats: Readonly<Record<string, string>>): void {
+  const sections = Object.entries(pats).map(
+    ([key, token]) => `[${key}]\npersonal access token = ${token}\n`,
+  );
+  writeFileSync(join(dir, "personalAccessTokens"), sections.join("\n"));
+}
+
+const SAVED = {
+  "azdevops-cli:https://dev.azure.com/contoso": "pat-contoso",
+  "azdevops-cli:https://fabrikam.visualstudio.com": "pat-fabrikam",
+  "azdevops-cli: default": "pat-default",
+};
+
 /* What connectionData says about a caller, as Azure DevOps shapes it. */
 function connection(user: Readonly<Record<string, unknown>>): Response {
   return Response.json({ authenticatedUser: user, authorizedUser: user, instanceId: "i" });
@@ -51,11 +65,79 @@ describe("azure-devops.resolve", () => {
     expect(resolve()).toEqual({ token: "", source: "env", username: "" });
   });
 
-  it("finds nothing without the variable, since az devops login keeps the PAT in the keyring", () => {
+  it("finds nothing without the variable or the file, since the keyring stays out of reach", () => {
     azConfig("[defaults]\norganization = https://dev.azure.com/contoso/\n");
 
     expect(resolve()).toBeNull();
     expect(resolve({ account: "ori" })).toBeNull();
+  });
+
+  it("reads the organization's saved PAT, then the one saved without an organization", () => {
+    patFile(azConfig(""), SAVED);
+
+    expect(resolve({ baseURL: "https://dev.azure.com/Contoso/Project/_git/repo" })).toEqual({
+      token: "pat-contoso",
+      source: "config",
+      username: "",
+      organization: "https://dev.azure.com/Contoso",
+    });
+    expect(resolve({ baseURL: "https://fabrikam.visualstudio.com/Project" })?.token).toBe(
+      "pat-fabrikam",
+    );
+    expect(resolve({ baseURL: "https://dev.azure.com/other" })?.token).toBe("pat-default");
+    expect(resolve()).toEqual({ token: "pat-default", source: "config", username: "" });
+  });
+
+  it("picks the saved PAT of the az default organization", () => {
+    const dir = azConfig("[defaults]\norganization = https://dev.azure.com/contoso/\n");
+    patFile(dir, SAVED);
+
+    expect(resolve()).toMatchObject({
+      token: "pat-contoso",
+      organization: "https://dev.azure.com/contoso",
+    });
+  });
+
+  it("lets the explicit token and AZURE_DEVOPS_EXT_PAT win over the file", () => {
+    patFile(azConfig(""), SAVED);
+    vi.stubEnv("AZURE_DEVOPS_EXT_PAT", "pat-from-env");
+
+    expect(resolve()?.token).toBe("pat-from-env");
+    expect(resolve({ token: "mine" })?.token).toBe("mine");
+  });
+
+  it("keeps the file from a named account and from a baseURL outside Azure DevOps", () => {
+    patFile(azConfig(""), SAVED);
+
+    expect(resolve({ account: "ori" })).toBeNull();
+    expect(resolve({ baseURL: "https://tfs.example.com/DefaultCollection" })).toBeNull();
+  });
+
+  it("skips empty tokens and sections az devops never writes", async () => {
+    patFile(azConfig(""), {
+      "azdevops-cli:https://dev.azure.com/contoso": "",
+      "keyring:https://dev.azure.com/contoso": "not-ours",
+      "azdevops-cli:http://dev.azure.com/contoso": "plain-http",
+      "azdevops-cli:https://evil.example/contoso": "elsewhere",
+      "azdevops-cli:https://dev.azure.com/Contoso": "not-lower-case",
+      "azdevops-cli: default": "pat-default",
+    });
+    const fetch = stubFetch(() => connection({ id: "u" }));
+
+    expect(resolve({ baseURL: "https://dev.azure.com/contoso" })?.token).toBe("pat-default");
+    expect(await list({ verify: true })).toMatchObject([{ host: "any", state: "unchecked" }]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("reads the file on Linux only, like the extension", () => {
+    patFile(azConfig(""), SAVED);
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
+    try {
+      expect(resolve()).toBeNull();
+    } finally {
+      Object.defineProperty(process, "platform", platform);
+    }
   });
 
   it("brings baseURL down to its organization and lets it win over the az default", () => {
@@ -216,6 +298,70 @@ describe("azure-devops.list", () => {
         note: "Azure DevOps took it for anonymous, so it ignored the token",
       },
     ]);
+  });
+
+  it("lists every saved PAT and marks the one resolve takes", async () => {
+    const dir = azConfig("[defaults]\norganization = https://dev.azure.com/contoso/\n");
+    patFile(dir, SAVED);
+    const fetch = stubFetch(() => connection({ id: "u", providerDisplayName: "Ori" }));
+
+    const saved = {
+      service: "azure-devops",
+      source: "config",
+      origin: "az devops personalAccessTokens",
+    };
+    expect(await list({ verify: true })).toEqual([
+      {
+        ...saved,
+        host: "https://dev.azure.com/contoso",
+        active: true,
+        state: "valid",
+        account: "Ori",
+      },
+      {
+        ...saved,
+        host: "https://fabrikam.visualstudio.com",
+        active: false,
+        state: "valid",
+        account: "Ori",
+      },
+      {
+        ...saved,
+        host: "https://dev.azure.com/contoso",
+        active: false,
+        state: "valid",
+        account: "Ori",
+      },
+    ]);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://dev.azure.com/contoso/_apis/connectionData",
+      "https://fabrikam.visualstudio.com/_apis/connectionData",
+      "https://dev.azure.com/contoso/_apis/connectionData",
+    ]);
+    const headers = new Headers(fetch.mock.calls[1]?.[1]?.headers);
+    expect(headers.get("authorization")).toBe(
+      `Basic ${Buffer.from(":pat-fabrikam").toString("base64")}`,
+    );
+  });
+
+  it("puts AZURE_DEVOPS_EXT_PAT ahead of the file and never sends a PAT with nowhere to go", async () => {
+    patFile(azConfig(""), { "azdevops-cli: default": "pat-default" });
+    vi.stubEnv("AZURE_DEVOPS_EXT_PAT", "pat");
+    const fetch = stubFetch(() => connection({ id: "u" }));
+
+    expect(await list({ verify: true })).toEqual([
+      expect.objectContaining({ origin: "AZURE_DEVOPS_EXT_PAT", active: true }),
+      {
+        service: "azure-devops",
+        host: "any",
+        source: "config",
+        origin: "az devops personalAccessTokens",
+        active: false,
+        state: "unchecked",
+        note: "this PAT has no organization (set one with az devops configure --defaults), so it is never sent anywhere to check",
+      },
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("calls a 401 rejected and an answer without a user unreachable", async () => {
