@@ -4,6 +4,7 @@ import pkg from "../package.json" with { type: "json" };
 import * as root from "../src/index.ts";
 import * as cloudflare from "../src/cloudflare.ts";
 import * as gitea from "../src/gitea.ts";
+import * as gitee from "../src/gitee.ts";
 import * as github from "../src/github.ts";
 import * as gitlab from "../src/gitlab.ts";
 import * as sourcehut from "../src/sourcehut.ts";
@@ -19,7 +20,7 @@ describe("@agntn/credentials", () => {
   });
 
   it("gives every service subpath resolve and list", () => {
-    for (const service of [cloudflare, gitea, github, gitlab, sourcehut]) {
+    for (const service of [cloudflare, gitea, gitee, github, gitlab, sourcehut]) {
       expect(Object.keys(service).sort()).toEqual(["list", "resolve"]);
     }
   });

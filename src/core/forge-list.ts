@@ -87,19 +87,28 @@ function envCandidates(forge: Forge): Candidate[] {
  * @returns {string | undefined} The endpoint, or undefined when the variable names no host.
  */
 function envVerifyUrl(forge: Forge, host: string | undefined): string | undefined {
-  return host === undefined || forge === "sourcehut"
-    ? undefined
-    : userEndpoint(forge, `https://${host}`);
+  if (host === undefined || forge === "sourcehut") return undefined;
+  return forge === "gitee" ? `${giteeApiBase()}/user` : userEndpoint(forge, `https://${host}`);
+}
+
+/**
+ * Where Gitee's MCP server sends its token: `GITEE_API_BASE`, or gitee.com's v5 API.
+ * @returns {string} The API base, without a trailing slash.
+ */
+function giteeApiBase(): string {
+  return (process.env.GITEE_API_BASE || "https://gitee.com/api/v5").replace(/\/+$/, "");
 }
 
 /**
  * The host a forge's own CLI sends its token variable to. Gitea and Sourcehut have no such
  * CLI convention, so `GITEA_TOKEN` and `SRHT_TOKEN` have no host to be checked against.
+ * Gitee's is the host of `GITEE_API_BASE`, when it has one.
  * @param forge - The forge.
- * @returns {string | undefined} The host, or undefined for Gitea and Sourcehut.
+ * @returns {string | undefined} The host, or undefined when the variable names none.
  */
 function envHost(forge: Forge): string | undefined {
   if (forge === "gitea" || forge === "sourcehut") return undefined;
+  if (forge === "gitee") return hostnameOfUrl(giteeApiBase()) || undefined;
   if (forge === "gitlab") {
     const configured = process.env.GITLAB_HOST;
     if (configured) return hostnameOfUrl(configured) ?? configured;
@@ -122,6 +131,8 @@ function loginCandidates(forge: Forge, envWins: boolean): Candidate[] {
         return glabLogins(envWins);
       case "gitea":
         return teaLogins(envWins);
+      case "gitee":
+        return [];
       case "sourcehut":
         return hutLogins(envWins);
     }
@@ -297,12 +308,12 @@ function loginCandidate(facts: LoginFacts): Candidate {
 
 /**
  * The endpoint that names the token's user, on the forge's own API. Sourcehut's sits on
- * meta, which hut can move, so `hutMetaQueryUrl` builds it.
+ * meta, which hut can move, so `hutMetaQueryUrl` builds it; Gitee's on `giteeApiBase()`.
  * @param forge - The forge.
  * @param origin - Scheme and host of the instance, or the full URL tea recorded.
  * @returns {string} The `/user` endpoint.
  */
-function userEndpoint(forge: Exclude<Forge, "sourcehut">, origin: string): string {
+function userEndpoint(forge: Exclude<Forge, "sourcehut" | "gitee">, origin: string): string {
   const base = origin.replace(/\/+$/, "");
   switch (forge) {
     case "github":
@@ -327,6 +338,7 @@ const SOURCEHUT_ME = JSON.stringify({ query: "{ me { canonicalName } }" });
 function probeRequest(forge: Forge, token: string): ProbeRequest {
   switch (forge) {
     case "gitea":
+    case "gitee":
       return { authorization: `token ${token}` };
     case "sourcehut":
       return { authorization: `Bearer ${token}`, refusals: SOURCEHUT_REFUSALS, body: SOURCEHUT_ME };
@@ -372,8 +384,8 @@ function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
 }
 
 /**
- * Read the user out of a forge's answer: `login` on GitHub, `username` on GitLab and
- * Gitea, `data.me.canonicalName` (`~name`) from Sourcehut's GraphQL.
+ * Read the user out of a forge's answer: `login` on GitHub and Gitee, `username` on GitLab
+ * and Gitea, `data.me.canonicalName` (`~name`) from Sourcehut's GraphQL.
  * @param forge - The forge that answered.
  * @param body - The parsed body.
  * @returns {string | undefined} The user, when the answer names one.

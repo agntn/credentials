@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Five services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Six services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -42,6 +42,7 @@ github
 gitlab: nothing found (set GITLAB_TOKEN or run glab auth login)
 gitea
   * any | unknown account | GITEA_TOKEN (env) | unchecked | GITEA_TOKEN names no host, so it is never sent anywhere to check
+gitee: nothing found (set GITEE_TOKEN or GITEE_ACCESS_TOKEN)
 sourcehut: nothing found (set SRHT_TOKEN or run hut init)
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
@@ -87,12 +88,15 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/github`     | `GH_TOKEN`, `GITHUB_TOKEN`               | `gh auth token`, `gh/hosts.yml`                |
 | `@agntn/credentials/gitlab`     | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_PAT` | `glab config get token`, `glab-cli/config.yml` |
 | `@agntn/credentials/gitea`      | `GITEA_TOKEN`                            | `tea/config.yml`                               |
+| `@agntn/credentials/gitee`      | `GITEE_TOKEN`, `GITEE_ACCESS_TOKEN`      | none                                           |
 | `@agntn/credentials/sourcehut`  | `SRHT_TOKEN`                             | `hut/config`                                   |
 | `@agntn/credentials/cloudflare` | `CLOUDFLARE_API_TOKEN`                   | `cf auth whoami` OAuth session                 |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
 
 Sourcehut reads `access-token` or `access-token-cmd` from each instance in `hut/config`. The command runs the way hut runs it, and the first word it prints is the token. So `access-token-cmd pass show srht` just works. The token stays in `pass`, where you put it.
+
+Gitee has no CLI login to chase: an explicit token, then `GITEE_TOKEN`, then `GITEE_ACCESS_TOKEN`. That last one is what `@gitee/mcp-gitee` reads, so an existing MCP setup just works. `list({ verify: true })` checks each token at the `/user` of `GITEE_API_BASE`, gitee.com by default. A private deployment's token stays home.
 
 Cloudflare throws `CredentialsError` with code `"token"` when there's no usable token, or `"account"` when there's a token but no single account id. Branch on `code`, not the message. The message is for humans, and its wording can change. Matching its text is a brittle old habit: a wording fix could silently turn a config error into an auth error.
 
