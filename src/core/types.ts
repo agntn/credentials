@@ -11,6 +11,7 @@ export const SERVICES = [
   "bitbucket",
   "azure-devops",
   "pushin",
+  "cursor-origin",
   "cloudflare",
 ] as const;
 

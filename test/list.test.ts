@@ -269,6 +269,18 @@ describe("gitlab.list", () => {
     expect(sent).toEqual([]);
   });
 
+  it("keeps the OAuth expiry glab recorded when GitLab accepts the token", async () => {
+    writeConfig(
+      "glab-cli/config.yml",
+      "hosts:\n    gitlab.com:\n        token: glpat-oauth\n        oauth2_expiry_date: 2099-01-01T00:00:00Z\n",
+    );
+    stubFetch({ "glpat-oauth": () => json({ username: "dev" }) });
+
+    expect(await gitlab({ verify: true })).toMatchObject([
+      { state: "valid", account: "dev", expiresAt: Date.parse("2099-01-01T00:00:00Z") },
+    ]);
+  });
+
   it("checks GITLAB_TOKEN against GITLAB_HOST when glab would use it", async () => {
     vi.stubEnv("GITLAB_TOKEN", "glpat-env");
     vi.stubEnv("GITLAB_HOST", "https://gitlab.example.org");
@@ -473,7 +485,7 @@ describe("listCredentials", () => {
 
   it("refuses an unknown service and a verify that isn't a boolean", async () => {
     await expect(listCredentials({ service: "launch\npad" })).rejects.toThrow(
-      'Unknown service "launch pad": use one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cloudflare',
+      'Unknown service "launch pad": use one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, cloudflare',
     );
     await expect(listCredentials({ verify: "true" as unknown as boolean })).rejects.toThrow(
       "verify must be true or false",

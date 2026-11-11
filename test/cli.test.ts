@@ -48,12 +48,15 @@ const tokens = new Set([
   "PUSHIN_TOKEN",
   "PUSHIN_URL",
   "PUN_CONFIG_DIR",
+  "CURSOR_AUTH_TOKEN",
+  "CURSOR_API_KEY",
+  "CURSOR_ORIGIN_ENDPOINT",
   "CLOUDFLARE_API_TOKEN",
   "AGNTN_CLOUDFLARE_ACCOUNT_ID",
   "CLOUDFLARE_ACCOUNT_ID",
   "GH_CONFIG_DIR",
 ]);
-/** No gh, glab or cf on PATH and empty config dirs, so only the variables a test sets are found. */
+/** No CLIs on PATH and empty config dirs, so only the variables a test sets are found. */
 const isolated = mkdtempSync(join(tmpdir(), "credentials-home-"));
 const env = {
   ...Object.fromEntries(
@@ -61,6 +64,7 @@ const env = {
   ),
   TERM: "xterm-256color",
   PATH: isolated,
+  HOME: isolated,
   XDG_CONFIG_HOME: isolated,
   AZURE_CONFIG_DIR: isolated,
 };
@@ -118,7 +122,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, cloudflare\n",
     });
   });
 
@@ -139,7 +143,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, cloudflare\n",
     });
     expect(run("mcp", "--stdio")).toMatchObject({
       code: 1,

@@ -5,6 +5,7 @@ import * as root from "../src/index.ts";
 import * as azureDevOps from "../src/azure-devops.ts";
 import * as bitbucket from "../src/bitbucket.ts";
 import * as cloudflare from "../src/cloudflare.ts";
+import * as cursorOrigin from "../src/cursor-origin.ts";
 import * as gitea from "../src/gitea.ts";
 import * as gitee from "../src/gitee.ts";
 import * as github from "../src/github.ts";
@@ -27,6 +28,7 @@ describe("@agntn/credentials", () => {
       azureDevOps,
       bitbucket,
       cloudflare,
+      cursorOrigin,
       gitea,
       gitee,
       github,

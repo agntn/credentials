@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Nine services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Ten services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Every package that talks to GitHub or Cloudflare ends up with its own token hunt
 ## ✨ Features
 
 - 🔗 **One chain, every service.** Explicit value, then env, then the CLI, then its config file.
-- 🐙 **GitHub, GitLab, Gitea, Sourcehut, Pushin.** `gh`, `glab`, `tea`, `hut` and `pun` logins work as they are.
+- 🐙 **GitHub, GitLab, Gitea, Sourcehut, Pushin, Cursor Origin.** `gh`, `glab`, `tea`, `hut`, `pun` and `origin` logins work as they are.
 - 👥 **Pick a GitHub account.** Got two `gh` logins? Name one. The active login stays put.
 - 🏠 **Self-hosted hosts.** Pass a `baseURL` and the CLI login for that host is used.
 - ☁️ **Cloudflare without an API token.** The `cf` OAuth session is enough. It's read again once it expires.
@@ -47,6 +47,7 @@ sourcehut: nothing found (set SRHT_TOKEN or run hut init)
 bitbucket: nothing found (set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL)
 azure-devops: nothing found (set AZURE_DEVOPS_EXT_PAT)
 pushin: nothing found (set PUSHIN_TOKEN or run pun login)
+cursor-origin: nothing found (set CURSOR_AUTH_TOKEN or run origin auth login)
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
 
@@ -86,17 +87,18 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 
 ## 🗺️ Services
 
-| Subpath                           | Env                                                             | CLI and config                                 |
-| --------------------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
-| `@agntn/credentials/github`       | `GH_TOKEN`, `GITHUB_TOKEN`                                      | `gh auth token`, `gh/hosts.yml`                |
-| `@agntn/credentials/gitlab`       | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_PAT`                        | `glab config get token`, `glab-cli/config.yml` |
-| `@agntn/credentials/gitea`        | `GITEA_TOKEN`                                                   | `tea/config.yml`                               |
-| `@agntn/credentials/gitee`        | `GITEE_TOKEN`, `GITEE_ACCESS_TOKEN`                             | none                                           |
-| `@agntn/credentials/sourcehut`    | `SRHT_TOKEN`                                                    | `hut/config`                                   |
-| `@agntn/credentials/bitbucket`    | `BITBUCKET_TOKEN`, `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL` | none                                           |
-| `@agntn/credentials/azure-devops` | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops` PAT file, default organization     |
-| `@agntn/credentials/pushin`       | `PUSHIN_TOKEN`                                                  | `pun/hosts.json`                               |
-| `@agntn/credentials/cloudflare`   | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                 |
+| Subpath                            | Env                                                             | CLI and config                                     |
+| ---------------------------------- | --------------------------------------------------------------- | -------------------------------------------------- |
+| `@agntn/credentials/github`        | `GH_TOKEN`, `GITHUB_TOKEN`                                      | `gh auth token`, `gh/hosts.yml`                    |
+| `@agntn/credentials/gitlab`        | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_PAT`                        | `glab config get token`, `glab-cli/config.yml`     |
+| `@agntn/credentials/gitea`         | `GITEA_TOKEN`                                                   | `tea/config.yml`                                   |
+| `@agntn/credentials/gitee`         | `GITEE_TOKEN`, `GITEE_ACCESS_TOKEN`                             | none                                               |
+| `@agntn/credentials/sourcehut`     | `SRHT_TOKEN`                                                    | `hut/config`                                       |
+| `@agntn/credentials/bitbucket`     | `BITBUCKET_TOKEN`, `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL` | none                                               |
+| `@agntn/credentials/azure-devops`  | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops` PAT file, default organization         |
+| `@agntn/credentials/pushin`        | `PUSHIN_TOKEN`                                                  | `pun/hosts.json`                                   |
+| `@agntn/credentials/cursor-origin` | `CURSOR_AUTH_TOKEN`                                             | `origin auth token`, `origin-cli/credentials.json` |
+| `@agntn/credentials/cloudflare`    | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                     |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
 
