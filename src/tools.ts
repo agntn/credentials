@@ -24,9 +24,9 @@ export const listTool = defineTool({
   name: "credentials_list",
   title: "List Credentials",
   description:
-    "List the GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket and Cloudflare credentials this machine holds: token variables, gh/glab/tea/hut logins and the cf OAuth session. Each line gives the host, account, where it came from, its state and expiry, and * marks the one other agntn packages will use. Tokens are never shown. With verify, each service is asked whether it still accepts its credential, on that credential's own host only; without it nothing goes over the network except cf, which always checks its own session.",
+    "List the GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps and Cloudflare credentials this machine holds: token variables, gh/glab/tea/hut logins and the cf OAuth session. Each line gives the host, account, where it came from, its state and expiry, and * marks the one other agntn packages will use. Tokens are never shown. With verify, each service is asked whether it still accepts its credential, on that credential's own host only; without it nothing goes over the network except cf, which always checks its own session.",
   snippet:
-    "Use credentials_list to see which GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket and Cloudflare credentials exist, which one is active and whether they still work.",
+    "Use credentials_list to see which GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps and Cloudflare credentials exist, which one is active and whether they still work.",
   guidelines: [
     "Pass verify: true to find out whether a credential is still accepted, not just present.",
     "The tool never returns a token. Ask the user to log in with gh, glab, tea, hut or cf when one is missing.",

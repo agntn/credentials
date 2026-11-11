@@ -7,6 +7,7 @@ export default defineBuildConfig({
       type: "bundle",
       input: [
         "./src/index.ts",
+        "./src/azure-devops.ts",
         "./src/bitbucket.ts",
         "./src/cloudflare.ts",
         "./src/gitea.ts",

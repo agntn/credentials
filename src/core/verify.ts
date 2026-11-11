@@ -23,16 +23,18 @@ export interface ProbeRequest {
   readonly refusals?: readonly number[];
   /** A JSON body, which turns the GET into a POST, for a GraphQL endpoint. */
   readonly body?: string;
+  /** More headers, such as Azure DevOps' redirect switch. */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /**
  * Send one authenticated request and classify the answer.
  * @param url - Endpoint on the credential's own host.
- * @param request - The header, the refusal statuses and an optional body.
+ * @param request - The header, the refusal statuses, an optional body and more headers.
  * @returns {Promise<Probe>} The state, plus the response parts a caller may read.
  */
 export async function probe(url: string, request: ProbeRequest): Promise<Probe> {
-  const { authorization, refusals = [401, 403], body: query } = request;
+  const { authorization, refusals = [401, 403], body: query, headers: extra } = request;
   let response: Response;
   try {
     response = await fetch(url, {
@@ -42,6 +44,7 @@ export async function probe(url: string, request: ProbeRequest): Promise<Probe> 
         Accept: "application/json",
         "User-Agent": "@agntn/credentials",
         ...(query === undefined ? {} : { "Content-Type": "application/json" }),
+        ...extra,
       },
       redirect: "error",
       signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),

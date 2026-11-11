@@ -9,6 +9,7 @@ export const SERVICES = [
   "gitee",
   "sourcehut",
   "bitbucket",
+  "azure-devops",
   "cloudflare",
 ] as const;
 

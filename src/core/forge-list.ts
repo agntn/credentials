@@ -25,6 +25,7 @@ import {
   parseYamlListEntries,
   runCli,
 } from "./forge.ts";
+import { AZURE_DEVOPS_HEADERS, connectionFacts, defaultOrganization } from "./azure-devops.ts";
 import { compact, epoch, isRecord, nonEmptyString } from "./fields.ts";
 import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutToken } from "./hut.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
@@ -140,9 +141,10 @@ function envNote(facts: EnvFacts, credential: ForgeCredential | undefined): stri
   if (credential === undefined) {
     return `${key} goes out with ${ENV_USERNAMES[key]}, which isn't set, so resolve skips it`;
   }
-  if (facts.host === undefined)
-    return `${key} names no host, so it is never sent anywhere to check`;
-  return UNVERIFIABLE[key];
+  if (facts.host !== undefined) return UNVERIFIABLE[key];
+  return facts.forge === "azure-devops"
+    ? `${key} has no organization (set one with az devops configure --defaults), so it is never sent anywhere to check`
+    : `${key} names no host, so it is never sent anywhere to check`;
 }
 
 /**
@@ -153,6 +155,7 @@ function envNote(facts: EnvFacts, credential: ForgeCredential | undefined): stri
  */
 function envVerifyUrl(forge: Forge, host: string | undefined): string | undefined {
   if (host === undefined || forge === "sourcehut") return undefined;
+  if (forge === "azure-devops") return `${host}/_apis/connectionData`;
   return forge === "gitee" ? `${giteeApiBase()}/user` : userEndpoint(forge, `https://${host}`);
 }
 
@@ -168,12 +171,14 @@ function giteeApiBase(): string {
  * The host a forge's own CLI sends its token variable to. Gitea and Sourcehut have no such
  * CLI convention, so `GITEA_TOKEN` and `SRHT_TOKEN` have no host to be checked against.
  * Gitee's is the host of `GITEE_API_BASE`, when it has one.
+ * Azure DevOps' is its default organization.
  * @param forge - The forge.
  * @returns {string | undefined} The host, or undefined when the variable names none.
  */
 function envHost(forge: Forge): string | undefined {
   if (forge === "gitea" || forge === "sourcehut") return undefined;
   if (forge === "gitee") return hostnameOfUrl(giteeApiBase()) || undefined;
+  if (forge === "azure-devops") return defaultOrganization();
   if (forge === "gitlab") {
     const configured = process.env.GITLAB_HOST;
     if (configured) return hostnameOfUrl(configured) ?? configured;
@@ -198,6 +203,7 @@ function loginCandidates(forge: Forge, envWins: boolean): Candidate[] {
         return teaLogins(envWins);
       case "gitee":
       case "bitbucket":
+      case "azure-devops":
         return [];
       case "sourcehut":
         return hutLogins(envWins);
@@ -379,7 +385,10 @@ function loginCandidate(facts: LoginFacts): Candidate {
  * @param origin - Scheme and host of the instance, or the full URL tea recorded.
  * @returns {string} The `/user` endpoint.
  */
-function userEndpoint(forge: Exclude<Forge, "sourcehut" | "gitee">, origin: string): string {
+function userEndpoint(
+  forge: Exclude<Forge, "sourcehut" | "gitee" | "azure-devops">,
+  origin: string,
+): string {
   const base = origin.replace(/\/+$/, "");
   switch (forge) {
     case "github":
@@ -411,9 +420,11 @@ function probeRequest(
   credential: Pick<Candidate, "token" | "username">,
 ): ProbeRequest {
   const { token, username } = credential;
+  if (forge === "azure-devops") {
+    return { authorization: basicAuth("", token), headers: AZURE_DEVOPS_HEADERS };
+  }
   if (username !== undefined) {
-    const basic = Buffer.from(`${username}:${token ?? ""}`).toString("base64");
-    return { authorization: `Basic ${basic}`, refusals: BITBUCKET_REFUSALS };
+    return { authorization: basicAuth(username, token), refusals: BITBUCKET_REFUSALS };
   }
   switch (forge) {
     case "gitea":
@@ -424,6 +435,16 @@ function probeRequest(
     default:
       return { authorization: `Bearer ${token}` };
   }
+}
+
+/**
+ * Build a basic auth header.
+ * @param username - The login, empty for Azure DevOps.
+ * @param token - The token that goes in as the password.
+ * @returns {string} The `Authorization` value.
+ */
+function basicAuth(username: string, token: string | undefined): string {
+  return `Basic ${Buffer.from(`${username}:${token ?? ""}`).toString("base64")}`;
 }
 
 /**
@@ -447,6 +468,7 @@ async function verifyCandidate(forge: Forge, candidate: Candidate): Promise<Cred
  */
 function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
   if (answer.state !== "valid") return { state: answer.state, note: answer.note };
+  if (forge === "azure-devops") return connectionFacts(answer.body);
   const scopes = answer.headers.get("x-oauth-scopes") ?? "";
   return {
     state: "valid",
