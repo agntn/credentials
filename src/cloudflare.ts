@@ -247,15 +247,15 @@ function missingAccount(reason: string): CredentialsError {
   return new CredentialsError(
     SERVICE,
     `Set AGNTN_CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_ACCOUNT_ID: ${reason}`,
+    { code: "account" },
   );
 }
 
 function cfFailure(message: string, cause?: unknown): CredentialsError {
-  return new CredentialsError(
-    SERVICE,
-    `${message}. ${SETUP_HINT}`,
-    cause === undefined ? {} : { cause },
-  );
+  return new CredentialsError(SERVICE, `${message}. ${SETUP_HINT}`, {
+    code: "token",
+    ...(cause === undefined ? {} : { cause }),
+  });
 }
 
 /* The SyntaxError quotes the start of its input, so it never becomes a cause: the text reaches the model. */

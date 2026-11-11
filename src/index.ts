@@ -1,5 +1,6 @@
 export { version } from "./version.ts";
 export { CredentialsError } from "./core/errors.ts";
+export type { CredentialsErrorCode, CredentialsErrorOptions } from "./core/errors.ts";
 export type {
   CredentialInfo,
   CredentialSource,

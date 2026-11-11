@@ -88,7 +88,9 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/gitea`      | `GITEA_TOKEN`                            | `tea/config.yml`                               |
 | `@agntn/credentials/cloudflare` | `CLOUDFLARE_API_TOKEN`                   | `cf auth whoami` OAuth session                 |
 
-The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous. Cloudflare throws `CredentialsError` instead, and the message says what to set.
+The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
+
+Cloudflare throws `CredentialsError` with code `"token"` when there's no usable token, or `"account"` when there's a token but no single account id. Branch on `code`, not the message. The message is for humans, and its wording can change. Matching its text is a brittle old habit: a wording fix could silently turn a config error into an auth error.
 
 Cloudflare also needs an account. It takes `accountId`, then `AGNTN_CLOUDFLARE_ACCOUNT_ID`, then `CLOUDFLARE_ACCOUNT_ID`. If none is set, the `cf` session's account is used. That only works when it reaches exactly one. Got a 401 back? Call it with `refresh: true`.
 
