@@ -25,7 +25,6 @@ catalogs:
     "@oh-my-pi/pi-coding-agent": 18.4.2
     "@types/node": 26.2.0
     ai: 7.0.127
-    changelogen: 0.6.2
     obuild: 0.4.43
     typescript: 7.0.2
 
