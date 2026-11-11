@@ -84,26 +84,34 @@ describe("cursorOrigin.resolve", () => {
     const fresh = jwt(Date.now() + HOUR);
     originLogin({ accessToken: fresh });
 
-    expect(resolve()).toEqual({ token: fresh, source: "config" });
+    expect(resolve()).toEqual({
+      token: fresh,
+      source: "config",
+      origin: "origin credentials.json",
+    });
     originCli();
-    expect(resolve()).toEqual({ token: "cli-default", source: "cli" });
+    expect(resolve()).toEqual({ token: "cli-default", source: "cli", origin: "origin" });
     vi.stubEnv("CURSOR_AUTH_TOKEN", "oat_env");
-    expect(resolve()).toEqual({ token: "oat_env", source: "env" });
-    expect(resolve({ token: "mine" })).toEqual({ token: "mine", source: "explicit" });
+    expect(resolve()).toEqual({ token: "oat_env", source: "env", origin: "CURSOR_AUTH_TOKEN" });
+    expect(resolve({ token: "mine" })).toEqual({
+      token: "mine",
+      source: "explicit",
+      origin: "token",
+    });
   });
 
   it("asks origin about origin.cursor.com, whatever CURSOR_ORIGIN_ENDPOINT says", () => {
     originCli();
     vi.stubEnv("CURSOR_ORIGIN_ENDPOINT", "https://origin.corp.example");
 
-    expect(resolve()).toEqual({ token: "cli-default", source: "cli" });
+    expect(resolve()).toEqual({ token: "cli-default", source: "cli", origin: "origin" });
   });
 
   it("keeps an empty CURSOR_AUTH_TOKEN as anonymous access", () => {
     originCli();
     vi.stubEnv("CURSOR_AUTH_TOKEN", "");
 
-    expect(resolve()).toEqual({ token: "", source: "env" });
+    expect(resolve()).toEqual({ token: "", source: "env", origin: "CURSOR_AUTH_TOKEN" });
   });
 
   it("reads logins only for a caller headed to origin.cursor.com", () => {
@@ -115,7 +123,11 @@ describe("cursorOrigin.resolve", () => {
       "https://origin.cursor.com",
       "https://api.origin.cursor.com",
     ]) {
-      expect(resolve({ baseURL })).toEqual({ token: "cli-default", source: "cli" });
+      expect(resolve({ baseURL })).toEqual({
+        token: "cli-default",
+        source: "cli",
+        origin: "origin",
+      });
     }
     expect(resolve({ baseURL: "https://origin.corp.example" })).toBeNull();
     expect(resolve({ baseURL: "https://evilorigin.cursor.com" })).toBeNull();
@@ -140,7 +152,11 @@ describe("cursorOrigin.resolve", () => {
       source: "explicit",
     });
     vi.stubEnv("CURSOR_AUTH_TOKEN", "oat_env");
-    expect(resolve({ baseURL: "not a url" })).toEqual({ token: "oat_env", source: "env" });
+    expect(resolve({ baseURL: "not a url" })).toEqual({
+      token: "oat_env",
+      source: "env",
+      origin: "CURSOR_AUTH_TOKEN",
+    });
   });
 
   it("skips a saved token that has expired, since only origin can refresh it", () => {
@@ -180,7 +196,11 @@ describe("cursorOrigin.resolve", () => {
     originLogin({ accessToken: "oat_xdg" });
     vi.stubEnv("HOME", home);
 
-    expect(resolve()).toEqual({ token: "oat_legacy", source: "config" });
+    expect(resolve()).toEqual({
+      token: "oat_legacy",
+      source: "config",
+      origin: "origin credentials.json",
+    });
   });
 });
 

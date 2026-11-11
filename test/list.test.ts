@@ -2,10 +2,10 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { list as gitea } from "../src/gitea.ts";
+import { list as gitea, resolve as resolveGitea } from "../src/gitea.ts";
 import { list as github, resolve as resolveGithub } from "../src/github.ts";
-import { list as gitlab } from "../src/gitlab.ts";
-import { list as sourcehut } from "../src/sourcehut.ts";
+import { list as gitlab, resolve as resolveGitlab } from "../src/gitlab.ts";
+import { list as sourcehut, resolve as resolveSourcehut } from "../src/sourcehut.ts";
 import { listCredentials } from "../src/tool-operations.ts";
 
 interface Sent {
@@ -205,7 +205,11 @@ describe("github.resolve without gh", () => {
       ].join("\n"),
     );
 
-    expect(resolveGithub()).toEqual({ token: "gho_second", source: "config" });
+    expect(resolveGithub()).toEqual({
+      token: "gho_second",
+      source: "config",
+      origin: "gh hosts.yml",
+    });
     expect(await github()).toMatchObject([
       { account: "first", active: false },
       { account: "second", active: true },
@@ -433,6 +437,64 @@ describe("sourcehut.list", () => {
       ["SRHT_TOKEN", true],
       ["hut config", false],
     ]);
+  });
+});
+
+describe("resolve origin", () => {
+  /* One token per case, so list has exactly one entry to match. */
+  it.each([
+    {
+      name: "a token variable",
+      setup: () => vi.stubEnv("GITLAB_PAT", "glpat-env"),
+      resolve: resolveGitlab,
+      list: gitlab,
+    },
+    {
+      name: "gh hosts.yml",
+      setup: () =>
+        writeConfig("gh/hosts.yml", "github.com:\n    oauth_token: gho_file\n    user: ori\n"),
+      resolve: resolveGithub,
+      list: github,
+    },
+    {
+      name: "glab config.yml",
+      setup: () =>
+        writeConfig("glab-cli/config.yml", "hosts:\n  gitlab.com:\n    token: glpat-file\n"),
+      resolve: resolveGitlab,
+      list: gitlab,
+    },
+    {
+      name: "tea config.yml",
+      setup: () =>
+        writeConfig(
+          "tea/config.yml",
+          "logins:\n  - name: gitea.com\n    url: https://gitea.com\n    token: tea-file\n",
+        ),
+      resolve: resolveGitea,
+      list: gitea,
+    },
+    {
+      name: "hut access-token",
+      setup: () => writeConfig("hut/config", 'instance "sr.ht" {\n  access-token "hut-file"\n}\n'),
+      resolve: resolveSourcehut,
+      list: sourcehut,
+    },
+    {
+      name: "hut access-token-cmd",
+      setup: () =>
+        writeConfig(
+          "hut/config",
+          `instance "sr.ht" {\n  access-token-cmd "${process.execPath}" -p '"hut-cmd"'\n}\n`,
+        ),
+      resolve: resolveSourcehut,
+      list: sourcehut,
+    },
+  ])("names $name the way list names its active entry", async ({ setup, resolve, list }) => {
+    setup();
+    const active = (await list()).filter((entry) => entry.active);
+
+    expect(active).toHaveLength(1);
+    expect(resolve()?.origin).toBe(active[0]?.origin);
   });
 });
 

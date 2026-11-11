@@ -39,12 +39,12 @@ describe("resolveToken", () => {
   describe("explicit token", () => {
     it("returns explicit token when provided", () => {
       const result = resolveToken("github", { token: "my-token" });
-      expect(result).toEqual({ token: "my-token", source: "explicit" });
+      expect(result).toEqual({ token: "my-token", source: "explicit", origin: "token" });
     });
 
     it("returns explicit token even if empty string", () => {
       const result = resolveToken("github", { token: "" });
-      expect(result).toEqual({ token: "", source: "explicit" });
+      expect(result).toEqual({ token: "", source: "explicit", origin: "token" });
     });
 
     it("skips env and CLI when explicit token is set", () => {
@@ -61,13 +61,13 @@ describe("resolveToken", () => {
     it("resolves GH_TOKEN", () => {
       process.env.GH_TOKEN = "ghp_abc123";
       const result = resolveToken("github");
-      expect(result).toEqual({ token: "ghp_abc123", source: "env" });
+      expect(result).toEqual({ token: "ghp_abc123", source: "env", origin: "GH_TOKEN" });
     });
 
     it("resolves GITHUB_TOKEN as fallback", () => {
       process.env.GITHUB_TOKEN = "ghp_fallback";
       const result = resolveToken("github");
-      expect(result).toEqual({ token: "ghp_fallback", source: "env" });
+      expect(result).toEqual({ token: "ghp_fallback", source: "env", origin: "GITHUB_TOKEN" });
     });
 
     it("prefers GH_TOKEN over GITHUB_TOKEN", () => {
@@ -80,7 +80,7 @@ describe("resolveToken", () => {
     it("resolves GITLAB_TOKEN", () => {
       process.env.GITLAB_TOKEN = "glpat-123";
       const result = resolveToken("gitlab");
-      expect(result).toEqual({ token: "glpat-123", source: "env" });
+      expect(result).toEqual({ token: "glpat-123", source: "env", origin: "GITLAB_TOKEN" });
     });
 
     it("resolves GL_TOKEN as fallback for GitLab", () => {
@@ -89,16 +89,23 @@ describe("resolveToken", () => {
       expect(result!.token).toBe("gl-fallback");
     });
 
+    it("names the GitLab variable that won, not the whole chain", () => {
+      process.env.GITLAB_PAT = "glpat-third";
+      expect(resolveToken("gitlab")?.origin).toBe("GITLAB_PAT");
+      process.env.GL_TOKEN = "glpat-second";
+      expect(resolveToken("gitlab")?.origin).toBe("GL_TOKEN");
+    });
+
     it("resolves GITEA_TOKEN", () => {
       process.env.GITEA_TOKEN = "gitea-abc";
       const result = resolveToken("gitea");
-      expect(result).toEqual({ token: "gitea-abc", source: "env" });
+      expect(result).toEqual({ token: "gitea-abc", source: "env", origin: "GITEA_TOKEN" });
     });
 
     it("stops the chain when env var is empty string", () => {
       process.env.GH_TOKEN = "";
       const result = resolveToken("github");
-      expect(result).toEqual({ token: "", source: "env" });
+      expect(result).toEqual({ token: "", source: "env", origin: "GH_TOKEN" });
       expect(mockedExecFileSync).not.toHaveBeenCalled();
     });
   });
@@ -109,7 +116,7 @@ describe("resolveToken", () => {
     it("runs gh auth token for GitHub", () => {
       mockedExecFileSync.mockReturnValueOnce("gho_clitoken\n");
       const result = resolveToken("github");
-      expect(result).toEqual({ token: "gho_clitoken", source: "cli" });
+      expect(result).toEqual({ token: "gho_clitoken", source: "cli", origin: "gh" });
       expect(mockedExecFileSync).toHaveBeenCalledWith(
         "gh",
         ["auth", "token", "--hostname", "github.com"],
@@ -145,7 +152,7 @@ describe("resolveToken", () => {
     it("runs glab config get token for GitLab", () => {
       mockedExecFileSync.mockReturnValueOnce("glpat-fromcli\n");
       const result = resolveToken("gitlab");
-      expect(result).toEqual({ token: "glpat-fromcli", source: "cli" });
+      expect(result).toEqual({ token: "glpat-fromcli", source: "cli", origin: "glab" });
       expect(mockedExecFileSync).toHaveBeenCalledWith(
         "glab",
         ["config", "get", "token", "--host", "gitlab.com"],
@@ -177,7 +184,7 @@ describe("resolveToken", () => {
         "github.com:\n    oauth_token: gho_fromconfig\n    user: testuser\n",
       );
       const result = resolveToken("github");
-      expect(result).toEqual({ token: "gho_fromconfig", source: "config" });
+      expect(result).toEqual({ token: "gho_fromconfig", source: "config", origin: "gh hosts.yml" });
     });
 
     it("reads gh config for custom hostname", () => {
@@ -199,7 +206,11 @@ describe("resolveToken", () => {
       });
       mockedReadFileSync.mockReturnValueOnce("hosts:\n  gitlab.com:\n    token: glpat-fromfile\n");
       const result = resolveToken("gitlab");
-      expect(result).toEqual({ token: "glpat-fromfile", source: "config" });
+      expect(result).toEqual({
+        token: "glpat-fromfile",
+        source: "config",
+        origin: "glab config.yml",
+      });
     });
 
     it("reads tea config for Gitea", () => {
@@ -209,7 +220,7 @@ describe("resolveToken", () => {
       const result = resolveToken("gitea", {
         baseURL: "https://codeberg.org",
       });
-      expect(result).toEqual({ token: "tea-fromfile", source: "config" });
+      expect(result).toEqual({ token: "tea-fromfile", source: "config", origin: "tea config.yml" });
     });
 
     it("returns null when no config file exists", () => {
@@ -236,7 +247,7 @@ describe("resolveToken", () => {
       );
 
       const result = resolveToken("github");
-      expect(result).toEqual({ token: "correct-token", source: "config" });
+      expect(result).toEqual({ token: "correct-token", source: "config", origin: "gh hosts.yml" });
     });
   });
 
@@ -256,7 +267,7 @@ describe("resolveToken", () => {
     it("asks gh for that login's token", () => {
       mockedExecFileSync.mockReturnValueOnce("gho_second\n");
       const result = resolveToken("github", { account: "second" });
-      expect(result).toEqual({ token: "gho_second", source: "cli" });
+      expect(result).toEqual({ token: "gho_second", source: "cli", origin: "gh" });
       expect(mockedExecFileSync).toHaveBeenCalledWith(
         "gh",
         ["auth", "token", "--hostname", "github.com", "--user=second"],
@@ -270,7 +281,7 @@ describe("resolveToken", () => {
       });
       mockedReadFileSync.mockReturnValueOnce(hostsWithTwoAccounts);
       const result = resolveToken("github", { account: "second" });
-      expect(result).toEqual({ token: "gho_second", source: "config" });
+      expect(result).toEqual({ token: "gho_second", source: "config", origin: "gh hosts.yml" });
     });
 
     it("never falls back to the active account's token", () => {
@@ -286,6 +297,7 @@ describe("resolveToken", () => {
       expect(resolveToken("github", { account: "second" })).toEqual({
         token: "ghp_env",
         source: "env",
+        origin: "GH_TOKEN",
       });
       expect(mockedExecFileSync).not.toHaveBeenCalled();
     });
@@ -375,9 +387,9 @@ describe("forge subpaths", () => {
       import("../src/gitea.ts"),
     ]);
 
-    expect(github.resolve()).toEqual({ token: "gh", source: "env" });
-    expect(gitlab.resolve()).toEqual({ token: "gl", source: "env" });
-    expect(gitea.resolve()).toEqual({ token: "tea", source: "env" });
+    expect(github.resolve()).toEqual({ token: "gh", source: "env", origin: "GH_TOKEN" });
+    expect(gitlab.resolve()).toEqual({ token: "gl", source: "env", origin: "GITLAB_TOKEN" });
+    expect(gitea.resolve()).toEqual({ token: "tea", source: "env", origin: "GITEA_TOKEN" });
   });
 });
 
@@ -411,7 +423,7 @@ describe("CLI token variables", () => {
     try {
       const { resolve } = await import("../src/gitlab.ts");
 
-      expect(resolve()).toEqual({ token: "glpat-login", source: "cli" });
+      expect(resolve()).toEqual({ token: "glpat-login", source: "cli", origin: "glab" });
       const options = vi.mocked(execFileSync).mock.calls[0]?.[2] as { env?: NodeJS.ProcessEnv };
       expect(options.env).not.toHaveProperty("OAUTH_TOKEN");
       expect(options.env).not.toHaveProperty("GITLAB_ACCESS_TOKEN");

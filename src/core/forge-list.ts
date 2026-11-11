@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   childKeys,
+  CONFIG_FILES,
   configDir,
   DEFAULT_HOSTS,
   ENV_KEYS,
@@ -33,7 +34,7 @@ import {
   storedPats,
 } from "./azure-devops.ts";
 import { compact, epoch, isRecord, nonEmptyString } from "./fields.ts";
-import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutToken } from "./hut.ts";
+import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutOrigin, hutToken } from "./hut.ts";
 import { ORIGIN_API, ORIGIN_HOST, originApiBase, originLogin } from "./origin.ts";
 import { httpOrigin, PUSHIN_ORIGIN, punLoginFor, punLogins } from "./pun.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
@@ -281,7 +282,7 @@ function ghLogins(envWins: boolean): Candidate[] {
         account: user,
         active: !envWins && user === activeUser,
         found: token === null ? undefined : fromCli === null ? "config" : "cli",
-        origin: fromCli === null ? "gh hosts.yml" : "gh",
+        origin: fromCli === null ? CONFIG_FILES.github : "gh",
         token,
         verifyUrl: userEndpoint("github", `https://${host}`),
       });
@@ -323,7 +324,7 @@ function glabLogin(host: string, section: string, envWins: boolean): Candidate |
     account: extractYamlField(section, "user") ?? undefined,
     active: !envWins,
     found: fromFile === null ? "cli" : "config",
-    origin: fromFile === null ? "glab" : "glab config.yml",
+    origin: fromFile === null ? "glab" : CONFIG_FILES.gitlab,
     token,
     verifyUrl: userEndpoint("gitlab", `${protocol}://${apiHost}`),
     expiresAt: epoch(extractYamlField(section, "oauth2_expiry_date")),
@@ -353,7 +354,7 @@ function teaLogins(envWins: boolean): Candidate[] {
         account: entry.user || undefined,
         active: !envWins && first,
         found: "config",
-        origin: "tea config.yml",
+        origin: CONFIG_FILES.gitea,
         token: entry.token,
         verifyUrl: userEndpoint("gitea", entry.url),
       }),
@@ -376,7 +377,7 @@ function hutLogins(envWins: boolean): Candidate[] {
       host: instance.origin,
       active: !envWins && hutInstanceFor(instances, instance.origin) === instance,
       found: "config",
-      origin: instance.command === undefined ? "hut config" : "hut access-token-cmd",
+      origin: hutOrigin(instance),
       token: hutToken(instance),
       verifyUrl: hutMetaQueryUrl(instance),
     }),
@@ -399,7 +400,7 @@ function azureDevOpsLogins(envWins: boolean): Candidate[] {
       host: host ?? "any",
       active: !envWins && pat === active,
       found: "config",
-      origin: "az devops personalAccessTokens",
+      origin: CONFIG_FILES["azure-devops"],
       token: pat.token,
       verifyUrl: host === undefined ? undefined : `${host}/_apis/connectionData`,
       note:
@@ -423,7 +424,7 @@ function punLoginCandidates(envWins: boolean): Candidate[] {
       host: new URL(login.origin).host,
       active: !envWins && punLoginFor(logins, login.origin) === login,
       found: "config",
-      origin: "pun hosts.json",
+      origin: CONFIG_FILES.pushin,
       token: login.token,
       verifyUrl: `${login.base}/api/v1/user`,
     }),
@@ -446,7 +447,7 @@ function originLoginCandidates(envWins: boolean): Candidate[] {
     host: ORIGIN_HOST,
     active: !envWins && !keySet,
     found: "config",
-    origin: "origin credentials.json",
+    origin: CONFIG_FILES["cursor-origin"],
     token: login.token,
     verifyUrl: `${ORIGIN_API}/rate_limit`,
     expiresAt: login.expiresAt,

@@ -1,4 +1,10 @@
-import { type ForgeCredential, type ForgeOptions, resolveForge } from "./core/forge.ts";
+import {
+  CONFIG_FILES,
+  type ForgeCredential,
+  type ForgeOptions,
+  resolveForge,
+  savedCredential,
+} from "./core/forge.ts";
 import { listForge } from "./core/forge-list.ts";
 import { httpOrigin, PUSHIN_ORIGIN, punLoginFor, punLogins } from "./core/pun.ts";
 import type { CredentialInfo, ListOptions } from "./core/types.ts";
@@ -23,7 +29,7 @@ function fromPunConfig(options: ForgeOptions | undefined): ForgeCredential | nul
   if (options?.account !== undefined) return null;
   const origin = options?.baseURL ? httpOrigin(options.baseURL) : PUSHIN_ORIGIN;
   const login = origin === undefined ? undefined : punLoginFor(punLogins(), origin);
-  return login === undefined ? null : { token: login.token, source: "config" };
+  return login === undefined ? null : savedCredential(login.token, CONFIG_FILES.pushin);
 }
 
 /**

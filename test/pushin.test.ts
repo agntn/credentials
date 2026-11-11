@@ -34,17 +34,25 @@ describe("pushin.resolve", () => {
   it("takes the explicit token, then PUSHIN_TOKEN, then pun's saved login", () => {
     punHosts({ "https://pushin.eu": { token: "pun_pat_saved" } });
 
-    expect(resolve()).toEqual({ token: "pun_pat_saved", source: "config" });
+    expect(resolve()).toEqual({
+      token: "pun_pat_saved",
+      source: "config",
+      origin: "pun hosts.json",
+    });
     vi.stubEnv("PUSHIN_TOKEN", "pun_pat_env");
-    expect(resolve()).toEqual({ token: "pun_pat_env", source: "env" });
-    expect(resolve({ token: "mine" })).toEqual({ token: "mine", source: "explicit" });
+    expect(resolve()).toEqual({ token: "pun_pat_env", source: "env", origin: "PUSHIN_TOKEN" });
+    expect(resolve({ token: "mine" })).toEqual({
+      token: "mine",
+      source: "explicit",
+      origin: "token",
+    });
   });
 
   it("keeps an empty PUSHIN_TOKEN as anonymous access", () => {
     punHosts({ "https://pushin.eu": { token: "pun_pat_saved" } });
     vi.stubEnv("PUSHIN_TOKEN", "");
 
-    expect(resolve()).toEqual({ token: "", source: "env" });
+    expect(resolve()).toEqual({ token: "", source: "env", origin: "PUSHIN_TOKEN" });
   });
 
   it("finds hosts.json under XDG_CONFIG_HOME without PUN_CONFIG_DIR", () => {
@@ -56,7 +64,7 @@ describe("pushin.resolve", () => {
     );
     vi.stubEnv("XDG_CONFIG_HOME", home);
 
-    expect(resolve()).toEqual({ token: "pun_pat_xdg", source: "config" });
+    expect(resolve()).toEqual({ token: "pun_pat_xdg", source: "config", origin: "pun hosts.json" });
   });
 
   it("picks the login by the origin the caller will send the token to", () => {

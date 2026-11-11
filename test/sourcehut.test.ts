@@ -32,17 +32,22 @@ describe("sourcehut.resolve", () => {
     writeHutConfig('instance "sr.ht" {\n  origin "sr.ht"\n  access-token "from-file"\n}\n');
     vi.stubEnv("SRHT_TOKEN", "from-env");
 
-    expect(resolve({ token: "mine" })).toEqual({ token: "mine", source: "explicit" });
-    expect(resolve()).toEqual({ token: "from-env", source: "env" });
+    expect(resolve({ token: "mine" })).toEqual({
+      token: "mine",
+      source: "explicit",
+      origin: "token",
+    });
+    expect(resolve()).toEqual({ token: "from-env", source: "env", origin: "SRHT_TOKEN" });
   });
 
   it("reads the sr.ht instance for sr.ht and for any of its services", () => {
     writeHutConfig('instance "sourcehut" {\n  origin "sr.ht"\n  access-token "srht-file"\n}\n');
 
-    expect(resolve()).toEqual({ token: "srht-file", source: "config" });
+    expect(resolve()).toEqual({ token: "srht-file", source: "config", origin: "hut config" });
     expect(resolve({ baseURL: "https://git.sr.ht/~me/repo" })).toEqual({
       token: "srht-file",
       source: "config",
+      origin: "hut config",
     });
   });
 
@@ -117,7 +122,11 @@ describe("sourcehut.resolve", () => {
       `instance "sr.ht" {\n  origin "sr.ht"\n  ${printing("", "  from-pass  extra", "url: x")}\n}\n`,
     );
 
-    expect(resolve()).toEqual({ token: "from-pass", source: "config" });
+    expect(resolve()).toEqual({
+      token: "from-pass",
+      source: "config",
+      origin: "hut access-token-cmd",
+    });
   });
 
   it("finds nothing when access-token-cmd fails or prints nothing", () => {
