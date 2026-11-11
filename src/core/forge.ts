@@ -5,16 +5,18 @@
  *   1. Explicit token (passed in options)
  *   2. Environment variables (GH_TOKEN, GITLAB_TOKEN, ...)
  *   3. The forge CLI (gh, glab)
- *   4. The CLI's config file, for a machine with the config but not the CLI
+ *   4. The CLI's config file, for a machine with the config but not the CLI (tea and hut
+ *      print no token, so for Gitea and Sourcehut the file is the only step)
  */
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { hutInstanceFor, hutInstances, hutToken } from "./hut.ts";
 import type { CredentialSource } from "./types.ts";
 
-export type Forge = "github" | "gitlab" | "gitea";
+export type Forge = "github" | "gitlab" | "gitea" | "sourcehut";
 
 /** A forge token and the step of the chain that found it. */
 export interface ForgeCredential {
@@ -29,7 +31,7 @@ export interface ForgeOptions {
   readonly baseURL?: string;
   /**
    * Login to read instead of the active one. Only `gh` can pick among several logins,
-   * so on GitLab and Gitea a named account finds nothing past the environment.
+   * so on every other forge a named account finds nothing past the environment.
    */
   readonly account?: string;
 }
@@ -38,12 +40,14 @@ export const DEFAULT_HOSTS: Record<Forge, string> = {
   github: "github.com",
   gitlab: "gitlab.com",
   gitea: "gitea.com",
+  sourcehut: "sr.ht",
 };
 
 export const ENV_KEYS: Record<Forge, readonly string[]> = {
   github: ["GH_TOKEN", "GITHUB_TOKEN"],
   gitlab: ["GITLAB_TOKEN", "GL_TOKEN", "GITLAB_PAT"],
   gitea: ["GITEA_TOKEN"],
+  sourcehut: ["SRHT_TOKEN"],
 };
 
 const CLI_TIMEOUT_MS = 5000;
@@ -112,7 +116,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
     case "gitlab":
       return runCli("glab", ["config", "get", "token", "--host", hostname]);
     case "gitea":
-      // tea has no command that prints a token, so only its config file counts.
+    case "sourcehut":
       return null;
   }
 }
@@ -173,6 +177,8 @@ function fromConfig(forge: Forge, hostname: string, account?: string): string | 
         return readGlabConfig(hostname);
       case "gitea":
         return readTeaConfig(hostname);
+      case "sourcehut":
+        return readHutConfig(hostname);
     }
   } catch {
     return null;
@@ -248,6 +254,17 @@ function readTeaConfig(hostname: string): string | null {
     if (entry.name === hostname || urlHostname === hostname) return entry.token;
   }
   return null;
+}
+
+/**
+ * Read hut config at ~/.config/hut/config, the scfg file `hut.ts` describes.
+ * @param hostname - Matched against each instance's domain, its subdomains and its service hosts.
+ * @returns {string | null} The first matching instance's token, or null.
+ */
+function readHutConfig(hostname: string): string | null {
+  const content = readFileSync(join(configDir(), "hut", "config"), "utf-8");
+  const instance = hutInstanceFor(hutInstances(content), hostname);
+  return instance === undefined ? null : hutToken(instance);
 }
 
 // --- Helpers ---

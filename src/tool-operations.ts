@@ -13,6 +13,7 @@ import type { CredentialInfo, Service } from "./core/types.ts";
 import { list as listGitea } from "./gitea.ts";
 import { list as listGithub } from "./github.ts";
 import { list as listGitlab } from "./gitlab.ts";
+import { list as listSourcehut } from "./sourcehut.ts";
 import { SERVICES } from "./tool-contract.ts";
 
 /**
@@ -42,6 +43,7 @@ const LISTERS: Record<
   github: listGithub,
   gitlab: listGitlab,
   gitea: listGitea,
+  sourcehut: listSourcehut,
   cloudflare: listCloudflare,
 };
 
@@ -50,6 +52,7 @@ const SETUP: Record<Service, string> = {
   github: "set GH_TOKEN or run gh auth login",
   gitlab: "set GITLAB_TOKEN or run glab auth login",
   gitea: "set GITEA_TOKEN or run tea login add",
+  sourcehut: "set SRHT_TOKEN or run hut init",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };
 
@@ -57,7 +60,7 @@ const SETUP: Record<Service, string> = {
 const MAX_SCOPES_SHOWN = 8;
 
 /**
- * List the credentials of one service or all four, without any token.
+ * List the credentials of one service or all of them, without any token.
  *
  * The arguments are checked here, not only in the schema: a caller can reach the
  * executor without it.

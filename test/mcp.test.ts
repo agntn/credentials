@@ -34,7 +34,7 @@ describe("credentials MCP server", () => {
     expect(response.tools[0]?.inputSchema).toMatchObject({
       type: "object",
       properties: {
-        service: { enum: ["github", "gitlab", "gitea", "cloudflare"] },
+        service: { enum: ["github", "gitlab", "gitea", "sourcehut", "cloudflare"] },
         verify: { type: "boolean" },
       },
       additionalProperties: false,
@@ -70,6 +70,7 @@ describe("credentials MCP server", () => {
         "  * github.com | unknown account | GH_TOKEN (env) | unchecked",
         "gitlab: nothing found (set GITLAB_TOKEN or run glab auth login)",
         "gitea: nothing found (set GITEA_TOKEN or run tea login add)",
+        "sourcehut: nothing found (set SRHT_TOKEN or run hut init)",
         "cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)",
         "Unchecked entries are only known to exist. Run again with verify (--verify in the CLI) to ask each service.",
       ].join("\n"),
@@ -77,7 +78,7 @@ describe("credentials MCP server", () => {
     expect(JSON.stringify(response)).not.toContain("gho_mcp_secret");
   });
 
-  it("rejects a key the schema doesn't know and a service outside the four", async () => {
+  it("rejects a key the schema doesn't know and an unknown service", async () => {
     const client = await connectTestClient();
 
     const unknown = await client.callTool({
@@ -92,6 +93,6 @@ describe("credentials MCP server", () => {
     expect(unknown.isError).toBe(true);
     expect(text(unknown)).toContain('unknown property "servic"');
     expect(outside.isError).toBe(true);
-    expect(text(outside)).toContain("must be one of github, gitlab, gitea, cloudflare");
+    expect(text(outside)).toContain("must be one of github, gitlab, gitea, sourcehut, cloudflare");
   });
 });
