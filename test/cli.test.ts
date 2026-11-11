@@ -34,6 +34,9 @@ const tokens = new Set([
   "GITLAB_PAT",
   "GITLAB_HOST",
   "GITEA_TOKEN",
+  "GITEE_TOKEN",
+  "GITEE_ACCESS_TOKEN",
+  "GITEE_API_BASE",
   "SRHT_TOKEN",
   "CLOUDFLARE_API_TOKEN",
   "AGNTN_CLOUDFLARE_ACCOUNT_ID",
@@ -104,7 +107,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, sourcehut, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, cloudflare\n",
     });
   });
 
@@ -125,7 +128,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, sourcehut, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, cloudflare\n",
     });
     expect(run("mcp", "--stdio")).toMatchObject({
       code: 1,

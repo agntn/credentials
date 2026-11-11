@@ -9,6 +9,7 @@ export default defineBuildConfig({
         "./src/index.ts",
         "./src/cloudflare.ts",
         "./src/gitea.ts",
+        "./src/gitee.ts",
         "./src/github.ts",
         "./src/gitlab.ts",
         "./src/sourcehut.ts",

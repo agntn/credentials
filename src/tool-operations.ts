@@ -11,6 +11,7 @@ import { sanitizeLine, ToolInputError } from "@agntn/tools";
 import { list as listCloudflare } from "./cloudflare.ts";
 import type { CredentialInfo, Service } from "./core/types.ts";
 import { list as listGitea } from "./gitea.ts";
+import { list as listGitee } from "./gitee.ts";
 import { list as listGithub } from "./github.ts";
 import { list as listGitlab } from "./gitlab.ts";
 import { list as listSourcehut } from "./sourcehut.ts";
@@ -43,6 +44,7 @@ const LISTERS: Record<
   github: listGithub,
   gitlab: listGitlab,
   gitea: listGitea,
+  gitee: listGitee,
   sourcehut: listSourcehut,
   cloudflare: listCloudflare,
 };
@@ -52,6 +54,7 @@ const SETUP: Record<Service, string> = {
   github: "set GH_TOKEN or run gh auth login",
   gitlab: "set GITLAB_TOKEN or run glab auth login",
   gitea: "set GITEA_TOKEN or run tea login add",
+  gitee: "set GITEE_TOKEN or GITEE_ACCESS_TOKEN",
   sourcehut: "set SRHT_TOKEN or run hut init",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };

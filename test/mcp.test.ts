@@ -34,7 +34,7 @@ describe("credentials MCP server", () => {
     expect(response.tools[0]?.inputSchema).toMatchObject({
       type: "object",
       properties: {
-        service: { enum: ["github", "gitlab", "gitea", "sourcehut", "cloudflare"] },
+        service: { enum: ["github", "gitlab", "gitea", "gitee", "sourcehut", "cloudflare"] },
         verify: { type: "boolean" },
       },
       additionalProperties: false,
@@ -70,6 +70,7 @@ describe("credentials MCP server", () => {
         "  * github.com | unknown account | GH_TOKEN (env) | unchecked",
         "gitlab: nothing found (set GITLAB_TOKEN or run glab auth login)",
         "gitea: nothing found (set GITEA_TOKEN or run tea login add)",
+        "gitee: nothing found (set GITEE_TOKEN or GITEE_ACCESS_TOKEN)",
         "sourcehut: nothing found (set SRHT_TOKEN or run hut init)",
         "cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)",
         "Unchecked entries are only known to exist. Run again with verify (--verify in the CLI) to ask each service.",
@@ -93,6 +94,8 @@ describe("credentials MCP server", () => {
     expect(unknown.isError).toBe(true);
     expect(text(unknown)).toContain('unknown property "servic"');
     expect(outside.isError).toBe(true);
-    expect(text(outside)).toContain("must be one of github, gitlab, gitea, sourcehut, cloudflare");
+    expect(text(outside)).toContain(
+      "must be one of github, gitlab, gitea, gitee, sourcehut, cloudflare",
+    );
   });
 });

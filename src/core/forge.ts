@@ -7,6 +7,8 @@
  *   3. The forge CLI (gh, glab)
  *   4. The CLI's config file, for a machine with the config but not the CLI (tea and hut
  *      print no token, so for Gitea and Sourcehut the file is the only step)
+ *
+ * Gitee has neither a CLI nor a config file, so its chain stops at the environment.
  */
 
 import { execFileSync } from "node:child_process";
@@ -16,7 +18,7 @@ import { join } from "node:path";
 import { hutInstanceFor, hutInstances, hutToken } from "./hut.ts";
 import type { CredentialSource } from "./types.ts";
 
-export type Forge = "github" | "gitlab" | "gitea" | "sourcehut";
+export type Forge = "github" | "gitlab" | "gitea" | "gitee" | "sourcehut";
 
 /** A forge token and the step of the chain that found it. */
 export interface ForgeCredential {
@@ -40,6 +42,7 @@ export const DEFAULT_HOSTS: Record<Forge, string> = {
   github: "github.com",
   gitlab: "gitlab.com",
   gitea: "gitea.com",
+  gitee: "gitee.com",
   sourcehut: "sr.ht",
 };
 
@@ -47,6 +50,8 @@ export const ENV_KEYS: Record<Forge, readonly string[]> = {
   github: ["GH_TOKEN", "GITHUB_TOKEN"],
   gitlab: ["GITLAB_TOKEN", "GL_TOKEN", "GITLAB_PAT"],
   gitea: ["GITEA_TOKEN"],
+  /** `GITEE_ACCESS_TOKEN` is the one Gitee's own MCP server reads. */
+  gitee: ["GITEE_TOKEN", "GITEE_ACCESS_TOKEN"],
   sourcehut: ["SRHT_TOKEN"],
 };
 
@@ -116,6 +121,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
     case "gitlab":
       return runCli("glab", ["config", "get", "token", "--host", hostname]);
     case "gitea":
+    case "gitee":
     case "sourcehut":
       return null;
   }
@@ -177,6 +183,8 @@ function fromConfig(forge: Forge, hostname: string, account?: string): string | 
         return readGlabConfig(hostname);
       case "gitea":
         return readTeaConfig(hostname);
+      case "gitee":
+        return null;
       case "sourcehut":
         return readHutConfig(hostname);
     }
