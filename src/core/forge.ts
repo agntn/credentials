@@ -9,8 +9,8 @@
  *      print no token, so for Gitea and Sourcehut the file is the only step)
  *
  * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
- * Bitbucket, which has no official CLI at all, and Azure DevOps, which keeps its login
- * in the keyring.
+ * Bitbucket, which has no official CLI at all. Azure DevOps keeps its login in the keyring,
+ * so `azure-devops.ts` reads only the file `az devops login` falls back to on Linux.
  */
 
 import { execFileSync } from "node:child_process";
