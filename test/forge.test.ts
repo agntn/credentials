@@ -160,15 +160,41 @@ describe("resolveToken", () => {
       );
     });
 
-    it("skips tea CLI (relies on config files)", () => {
-      // tea has no simple token command, should fall through to config
+    it("asks tea's git credential helper for Gitea", () => {
+      mockedExecFileSync.mockReturnValueOnce(
+        "protocol=https\nhost=gitea.com\nusername=me\npassword=tea-oauth\n",
+      );
+      const result = resolveToken("gitea");
+      expect(result).toEqual({ token: "tea-oauth", source: "cli", origin: "tea" });
+      expect(mockedExecFileSync).toHaveBeenCalledWith(
+        "tea",
+        ["login", "helper", "get"],
+        expect.objectContaining({ input: "protocol=https\nhost=gitea.com\n\n", timeout: 5000 }),
+      );
+    });
+
+    it("names the host with its port, as tea matches logins", () => {
+      mockedExecFileSync.mockReturnValueOnce(
+        "protocol=https\nhost=git.home.example:3000\npassword=tea-port\n",
+      );
+      const result = resolveToken("gitea", { baseURL: "https://git.home.example:3000/api/v1" });
+      expect(result).toEqual({ token: "tea-port", source: "cli", origin: "tea" });
+      expect(mockedExecFileSync).toHaveBeenCalledWith(
+        "tea",
+        ["login", "helper", "get"],
+        expect.objectContaining({ input: "protocol=https\nhost=git.home.example:3000\n\n" }),
+      );
+    });
+
+    it("falls through to tea's config file when the helper has no token", () => {
+      mockedExecFileSync.mockImplementation(() => {
+        throw new Error("user not set");
+      });
       mockedReadFileSync.mockImplementation(() => {
         throw new Error("ENOENT");
       });
-      const result = resolveToken("gitea");
-      expect(result).toBeNull();
-      // execSync should not be called for tea
-      expect(mockedExecFileSync).not.toHaveBeenCalled();
+      expect(resolveToken("gitea")).toBeNull();
+      expect(mockedExecFileSync).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -214,7 +240,7 @@ describe("resolveToken", () => {
     });
 
     it("reads tea config for Gitea", () => {
-      mockedReadFileSync.mockReturnValueOnce(
+      mockedReadFileSync.mockReturnValue(
         "logins:\n  - name: codeberg.org\n    url: https://codeberg.org\n    token: tea-fromfile\n",
       );
       const result = resolveToken("gitea", {
@@ -430,6 +456,27 @@ describe("CLI token variables", () => {
     } finally {
       delete process.env.OAUTH_TOKEN;
       delete process.env.GITLAB_ACCESS_TOKEN;
+    }
+  });
+
+  it("runs tea without the variables it builds a login from", async () => {
+    vi.resetAllMocks();
+    delete process.env.GITEA_TOKEN;
+    process.env.GH_TOKEN = "ghp-env";
+    process.env.GITEA_INSTANCE_URL = "https://gitea.com";
+    vi.mocked(execFileSync).mockReturnValueOnce(
+      "protocol=https\nhost=gitea.com\npassword=tea-login\n",
+    );
+    try {
+      const { resolve } = await import("../src/gitea.ts");
+
+      expect(resolve()).toEqual({ token: "tea-login", source: "cli", origin: "tea" });
+      const options = vi.mocked(execFileSync).mock.calls[0]?.[2] as { env?: NodeJS.ProcessEnv };
+      expect(options.env).not.toHaveProperty("GH_TOKEN");
+      expect(options.env).not.toHaveProperty("GITEA_INSTANCE_URL");
+    } finally {
+      delete process.env.GH_TOKEN;
+      delete process.env.GITEA_INSTANCE_URL;
     }
   });
 });

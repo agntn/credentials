@@ -20,6 +20,16 @@ export function epoch(value: unknown): number | undefined {
 }
 
 /**
+ * Read a Unix timestamp in seconds, as tea writes `token_expiry`.
+ * @param value - The field's text, if any.
+ * @returns {number | undefined} Milliseconds since the epoch, or undefined for no positive number.
+ */
+export function epochSeconds(value: string | undefined): number | undefined {
+  const seconds = Number(value);
+  return value && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined;
+}
+
+/**
  * Tell a plain object from everything else.
  * @param value - Parsed JSON or CLI output.
  * @returns {value is Record<string, unknown>} Whether it can be read by key.

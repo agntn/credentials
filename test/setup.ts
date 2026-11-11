@@ -1,6 +1,6 @@
 /**
- * Every in-process test starts on an empty machine: no token variables, no gh, glab, origin
- * or cf on PATH, and empty config dirs, `~/.config/origin-cli` included. Set directly, not
+ * Every in-process test starts on an empty machine: no token variables, no gh, glab, tea,
+ * origin or cf on PATH, and empty config dirs, `~/.config/origin-cli` included. Set directly, not
  * through `vi.stubEnv`, so a test's `vi.unstubAllEnvs()` comes back here instead of to the
  * developer's real environment.
  */
@@ -20,6 +20,7 @@ for (const key of [
   "GITLAB_PAT",
   "GITLAB_HOST",
   "GITEA_TOKEN",
+  "GITEA_INSTANCE_URL",
   "GITEE_TOKEN",
   "GITEE_ACCESS_TOKEN",
   "GITEE_API_BASE",

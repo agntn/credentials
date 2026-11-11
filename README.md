@@ -41,7 +41,7 @@ github
   * github.com | unknown account | GH_TOKEN (env) | rejected | HTTP 401
 gitlab: nothing found (set GITLAB_TOKEN or run glab auth login)
 gitea
-  * any | unknown account | GITEA_TOKEN (env) | unchecked | GITEA_TOKEN names no host, so it is never sent anywhere to check
+  * any | unknown account | GITEA_TOKEN (env) | unchecked | GITEA_TOKEN names no host without a valid GITEA_INSTANCE_URL, so it is never sent anywhere to check
 gitee: nothing found (set GITEE_TOKEN or GITEE_ACCESS_TOKEN)
 sourcehut: nothing found (set SRHT_TOKEN or run hut init)
 bitbucket: nothing found (set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL)
@@ -52,7 +52,7 @@ tangled: nothing found (set TANGLED_HANDLE and TANGLED_PASSWORD, an app password
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
 
-That `GH_TOKEN` is long dead, and GitHub said so. It also wins over any `gh` login. `gh` works and your tool gets 401? Look there first. `GITEA_TOKEN` never left the machine. Nothing tells it which host it's for.
+That `GH_TOKEN` is long dead, and GitHub said so. It also wins over any `gh` login. `gh` works and your tool gets 401? Look there first. `GITEA_TOKEN` never left the machine. Nothing tells it which host it's for. Set `GITEA_INSTANCE_URL`, as `tea` wants it, and it gets checked there.
 
 Want plain `credentials` instead of `npx`? `pnpm add -g @agntn/credentials` once.
 
@@ -92,7 +92,7 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | ---------------------------------- | --------------------------------------------------------------- | -------------------------------------------------- |
 | `@agntn/credentials/github`        | `GH_TOKEN`, `GITHUB_TOKEN`                                      | `gh auth token`, `gh/hosts.yml`                    |
 | `@agntn/credentials/gitlab`        | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_PAT`                        | `glab config get token`, `glab-cli/config.yml`     |
-| `@agntn/credentials/gitea`         | `GITEA_TOKEN`                                                   | `tea/config.yml`                                   |
+| `@agntn/credentials/gitea`         | `GITEA_TOKEN`                                                   | `tea login helper get`, `tea/config.yml`           |
 | `@agntn/credentials/gitee`         | `GITEE_TOKEN`, `GITEE_ACCESS_TOKEN`                             | none                                               |
 | `@agntn/credentials/sourcehut`     | `SRHT_TOKEN`                                                    | `hut/config`                                       |
 | `@agntn/credentials/bitbucket`     | `BITBUCKET_TOKEN`, `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL` | none                                               |
@@ -103,6 +103,8 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/cloudflare`    | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                     |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
+
+A `tea` OAuth login needs `tea` on the machine. An SSH one has no token at all. tea signs those requests with your key. `list` still shows it, so it won't look lost.
 
 Sourcehut reads `access-token` or `access-token-cmd` from each instance in `hut/config`. The command runs the way hut runs it, and the first word it prints is the token. So `access-token-cmd pass show srht` just works. The token stays in `pass`, where you put it.
 

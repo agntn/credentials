@@ -4,9 +4,9 @@
  * Every forge tries the same chain:
  *   1. Explicit token (passed in options)
  *   2. Environment variables (GH_TOKEN, GITLAB_TOKEN, ...)
- *   3. The forge CLI (gh, glab)
- *   4. The CLI's config file, for a machine with the config but not the CLI (tea and hut
- *      print no token, so for Gitea and Sourcehut the file is the only step)
+ *   3. The forge CLI (gh, glab, tea's git credential helper)
+ *   4. The CLI's config file, for a machine with the config but not the CLI (hut prints
+ *      no token, so for Sourcehut the file is the only step)
  *
  * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
  * Bitbucket, which has no official CLI at all. Azure DevOps keeps its login in the keyring,
@@ -125,7 +125,7 @@ export function resolveForge(forge: Forge, options?: ForgeOptions): ForgeCredent
   const account = options?.account;
   if (account !== undefined && forge !== "github") return null;
 
-  return fromLogin(forge, hostnameOf(forge, options?.baseURL), account);
+  return fromLogin(forge, loginHost(forge, options?.baseURL), account);
 }
 
 /**
@@ -177,8 +177,15 @@ export function savedCredential(token: string | null, origin: string): ForgeCred
   return token === null ? null : { token, source: "config", origin };
 }
 
-function hostnameOf(forge: Forge, baseURL?: string): string {
-  return (baseURL && hostnameOfUrl(baseURL)) || DEFAULT_HOSTS[forge];
+/**
+ * The host a CLI files its login under: the hostname for gh and glab, host and port for tea.
+ * @param forge - The forge.
+ * @param baseURL - The instance, or undefined for the forge's public host.
+ * @returns {string} The host.
+ */
+function loginHost(forge: Forge, baseURL?: string): string {
+  const host = baseURL && (forge === "gitea" ? hostOfUrl(baseURL) : hostnameOfUrl(baseURL));
+  return host || DEFAULT_HOSTS[forge];
 }
 
 // --- CLI tools ---
@@ -193,6 +200,8 @@ function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredent
     }
     case "gitlab":
       return askCli("glab", ["config", "get", "token", "--host", hostname]);
+    case "gitea":
+      return cliCredential(teaToken(hostname) ?? teaTokenByName(hostname), "tea");
     case "cursor-origin":
       return hostname === ORIGIN_HOST ? askCli("origin", ["auth", "token"]) : null;
     default:
@@ -207,39 +216,80 @@ function fromCli(forge: Forge, hostname: string, account?: string): ForgeCredent
  * @returns {ForgeCredential | null} The credential, or null.
  */
 function askCli(command: ForgeCli, args: readonly string[]): ForgeCredential | null {
-  const token = runCli(command, args);
+  return cliCredential(runCli(command, args), command);
+}
+
+/**
+ * Wrap a token a CLI printed.
+ * @param token - The token, or null.
+ * @param command - The CLI.
+ * @returns {ForgeCredential | null} The credential, or null.
+ */
+function cliCredential(token: string | null, command: ForgeCli): ForgeCredential | null {
   return token === null ? null : { token, source: "cli", origin: command };
 }
 
 /**
- * Run a CLI and take its trimmed stdout.
- * @param command - The CLI.
- * @param args - Its arguments.
- * @param hidden - Variables to keep from it, for a CLI that would print one of them instead
- * of the login asked for, as `glab config get token` prints `GITLAB_TOKEN` for any host.
- * @returns {string | null} The output, or null when the CLI fails or prints nothing.
+ * Ask tea's git credential helper for a token. It renews an OAuth one about to expire first.
+ * @param host - Host and port of the instance. tea takes the first login whose URL has them.
+ * @param login - A login to read by name instead.
+ * @returns {string | null} The token, or null when tea holds none whose login is on that host.
  */
+export function teaToken(host: string, login?: string): string | null {
+  const args = ["login", "helper", "get"];
+  if (login !== undefined) args.push(`--login=${login}`);
+  const lines = runCli("tea", args, `protocol=https\nhost=${host}\n\n`)?.split(/\r?\n/) ?? [];
+  const field = (key: string): string =>
+    lines.find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1) ?? "";
+  const answered = hostOfUrl(`${field("protocol")}://${field("host")}`);
+  return answered === host ? field("password") || null : null;
+}
+
+/**
+ * Ask tea for each login on a host by name, for the ones its literal host match misses.
+ * @param host - Host and port of the instance.
+ * @returns {string | null} The first token a login on that host hands out, or null.
+ */
+function teaTokenByName(host: string): string | null {
+  for (const entry of readTeaLogins()) {
+    if (!entry.name || !entry.url || hostOfUrl(entry.url) !== host) continue;
+    const token = teaToken(host, entry.name);
+    if (token !== null) return token;
+  }
+  return null;
+}
+
 /**
  * Token variables each CLI reports instead of the login it is asked about:
  * `glab config get token` prints `GITLAB_TOKEN` for any host. Every run hides them,
  * so a CLI answer always names a login, and the variables are read on their own.
+ * tea's other commands build a login from `GITEA_TOKEN` or `GH_TOKEN` with `GITEA_INSTANCE_URL`.
  */
 const CLI_TOKEN_VARIABLES: Record<ForgeCli, readonly string[]> = {
   gh: ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"],
   glab: ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"],
   /** Without the endpoint, `origin` answers for origin.cursor.com, the host it was asked about. */
   origin: ["CURSOR_AUTH_TOKEN", "CURSOR_ORIGIN_ENDPOINT"],
+  tea: ["GITEA_TOKEN", "GH_TOKEN", "GITEA_INSTANCE_URL"],
 };
 
-export type ForgeCli = "gh" | "glab" | "origin";
+export type ForgeCli = "gh" | "glab" | "origin" | "tea";
 
-export function runCli(command: ForgeCli, args: readonly string[]): string | null {
+/**
+ * Run a CLI without the token variables it would answer with, and take its trimmed stdout.
+ * @param command - The CLI.
+ * @param args - Its arguments.
+ * @param input - What to write to its stdin, for a CLI that reads a request there.
+ * @returns {string | null} The output, or null when the CLI fails or prints nothing.
+ */
+export function runCli(command: ForgeCli, args: readonly string[], input?: string): string | null {
   try {
     const output = execFileSync(command, args, {
       encoding: "utf-8",
       timeout: CLI_TIMEOUT_MS,
       stdio: ["pipe", "pipe", "pipe"],
       env: withoutVariables(CLI_TOKEN_VARIABLES[command]),
+      ...(input === undefined ? {} : { input }),
     });
     return output.trim() || null;
   } catch {
@@ -336,18 +386,16 @@ function readGlabConfig(hostname: string): string | null {
  *     - name: gitea.com
  *       url: https://gitea.com
  *       token: ...
- * @param hostname - Matched against each login's name and URL host.
+ *
+ * Only token logins keep a token here. OAuth ones live in tea's encrypted store.
+ * @param host - Host and port, matched against each login's name and URL host, as tea does.
  * @returns {string | null} The first matching login's token, or null.
  */
-function readTeaConfig(hostname: string): string | null {
-  const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
-  const loginsSection = getYamlMappingSection(content, "logins");
-  if (!loginsSection) return null;
-
-  for (const entry of parseYamlListEntries(loginsSection)) {
+function readTeaConfig(host: string): string | null {
+  for (const entry of readTeaLogins()) {
     if (!entry.token) continue;
-    const urlHostname = entry.url ? hostnameOfUrl(entry.url) : null;
-    if (entry.name === hostname || urlHostname === hostname) return entry.token;
+    const urlHost = entry.url ? hostOfUrl(entry.url) : null;
+    if (entry.name === host || urlHost === host) return entry.token;
   }
   return null;
 }
@@ -375,6 +423,20 @@ function readOriginConfig(hostname: string): string | null {
   return login.expiresAt !== undefined && login.expiresAt <= Date.now() ? null : login.token;
 }
 
+/**
+ * Read the logins in tea's `config.yml`, or none when there is no such file.
+ * @returns {Array<Record<string, string>>} Each login's fields, in file order.
+ */
+export function readTeaLogins(): Array<Record<string, string>> {
+  try {
+    const content = readFileSync(join(configDir(), "tea", "config.yml"), "utf-8");
+    const logins = getYamlMappingSection(content, "logins");
+    return logins === null ? [] : parseYamlListEntries(logins);
+  } catch {
+    return [];
+  }
+}
+
 // --- Helpers ---
 
 export function configDir(): string {
@@ -400,6 +462,19 @@ export function ghConfigDir(): string {
 export function hostnameOfUrl(url: string): string | null {
   try {
     return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a URL's host with its port, the way tea matches its logins.
+ * @param url - Any URL.
+ * @returns {string | null} The host, or null when the URL doesn't parse or has none.
+ */
+export function hostOfUrl(url: string): string | null {
+  try {
+    return new URL(url).host || null;
   } catch {
     return null;
   }

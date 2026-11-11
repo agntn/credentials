@@ -34,6 +34,7 @@ const tokens = new Set([
   "GITLAB_PAT",
   "GITLAB_HOST",
   "GITEA_TOKEN",
+  "GITEA_INSTANCE_URL",
   "GITEE_TOKEN",
   "GITEE_ACCESS_TOKEN",
   "GITEE_API_BASE",
