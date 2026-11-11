@@ -1,5 +1,4 @@
-import { indexTools, invokeTool, ToolInputError } from "@agntn/tools";
-import { createMcpServer as createToolServer, errorResult } from "@agntn/tools/mcp";
+import { callTool, createMcpServer as createToolServer, errorResult } from "@agntn/tools/mcp";
 import type { Server } from "@modelcontextprotocol/server";
 import { sourceChangeCheck } from "./source-change.ts";
 import { credentialsTools } from "./tools.ts";
@@ -7,43 +6,34 @@ import { version } from "./version.ts";
 
 const restart = "src/ changed under this server, restart it to load the new code";
 
-/** Taken as `src/` loads, so a server built later can't adopt a pull its cached modules missed. */
+/** The baseline is the process start, so a pull during startup counts. */
 const changed = import.meta.url.endsWith(".ts")
-  ? sourceChangeCheck(import.meta.dirname)
+  ? sourceChangeCheck(import.meta.dirname, performance.timeOrigin)
   : undefined;
 
 /**
- * Creates an unconnected MCP server exposing the credentials tool. Run from `src/`, it answers a call
- * with a restart line once that tree changed, checked before the name and the schema and again when
- * the tool fails. A call that succeeds while a pull lands keeps its answer; the next one refuses.
+ * Creates an unconnected MCP server exposing the credentials tool. Run from `src/`, it answers with
+ * a restart line before and after every call once that tree changed, a success included.
  *
  * @returns {Server} Unconnected MCP server.
  */
 export function createMcpServer(): Server {
-  const server = createToolServer({ name: "credentials", version }, credentialsTools);
+  const info = { name: "credentials", version };
+  const server = createToolServer(info, credentialsTools);
   if (!changed) return server;
 
-  const byName = indexTools(credentialsTools);
   server.setRequestHandler("tools/call", async (request, ctx) => {
     if (changed()) return errorResult(restart);
-    const tool = byName.get(request.params.name);
-    if (!tool)
-      return errorResult(`Unknown credentials tool: ${JSON.stringify(request.params.name)}`);
-    try {
-      const result = await invokeTool(tool, request.params.arguments ?? {}, {
+    const result = await callTool(
+      info,
+      credentialsTools,
+      request.params.name,
+      request.params.arguments,
+      {
         signal: ctx.mcpReq.signal,
-      });
-      return {
-        content: result.content,
-        ...(result.isError === undefined ? {} : { isError: result.isError }),
-      };
-    } catch (error) {
-      if (changed()) return errorResult(restart);
-      if (error instanceof ToolInputError) return errorResult(...error.lines);
-      return errorResult(
-        `${tool.name} failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+      },
+    );
+    return changed() ? errorResult(restart) : result;
   });
   return server;
 }

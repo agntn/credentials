@@ -215,11 +215,14 @@ const refused = {
 
 /**
  * Starts `mcp` from the built bin of a checkout copy and connects a client to it.
- * @param patch - Rewrites `src/tool-operations.ts` before the server starts.
+ * @param patch - Rewrites files under `src/`, keyed by name, before the server starts.
  * @param reuse - A copy made by an earlier call, served again as it stands.
  * @returns {Promise<{ checkout: string, client: Client }>} The copy and the connected client.
  */
-async function checkoutServer(patch?: (operations: string) => string, reuse?: string) {
+async function checkoutServer(
+  patch: Readonly<Record<string, (source: string) => string>> = {},
+  reuse?: string,
+) {
   const checkout = reuse ?? mkdtempSync(join(tmpdir(), "credentials-cli-"));
   if (reuse === undefined) {
     for (const entry of ["dist", "src", "package.json"]) {
@@ -227,8 +230,10 @@ async function checkoutServer(patch?: (operations: string) => string, reuse?: st
     }
     symlinkSync(join(root, "node_modules"), join(checkout, "node_modules"), "dir");
   }
-  const operations = join(checkout, "src/tool-operations.ts");
-  if (patch) writeFileSync(operations, patch(readFileSync(operations, "utf8")));
+  for (const [file, rewrite] of Object.entries(patch)) {
+    const path = join(checkout, "src", file);
+    writeFileSync(path, rewrite(readFileSync(path, "utf8")));
+  }
   const client = new Client({ name: "credentials-test", version: "1.0.0" });
   await client.connect(
     new StdioClientTransport({
@@ -310,25 +315,65 @@ describe.skipIf(!existsSync(join(root, "dist/cli.mjs")))(
       }
     });
 
-    it("blames a pull that lands mid-call for the failure, not the tool", async () => {
+    it("refuses before the tool runs, not only after it answers", async () => {
+      /** A mark outside `src/` shows whether the executor ran. */
+      const { checkout, client } = await checkoutServer({
+        "tool-operations.ts": (operations) =>
+          `import { writeFileSync } from "node:fs";\n${operations.replace(
+            "  const services = selectedServices(input.service);",
+            `  writeFileSync(new URL("../ran", import.meta.url), "");
+  const services = selectedServices(input.service);`,
+          )}`,
+      });
+      try {
+        await client.listTools();
+        writeFileSync(join(checkout, "src/pulled.ts"), "export {};\n");
+
+        expect(await client.callTool({ name: "credentials_list", arguments: {} })).toMatchObject(
+          refused,
+        );
+        expect(existsSync(join(checkout, "ran"))).toBe(false);
+      } finally {
+        await client.close();
+        rmSync(checkout, { recursive: true, force: true });
+      }
+    });
+
+    it("refuses calls when a pull lands while src/ is still loading", async () => {
+      /** A static import writes into `src/` while it loads, like a pull. */
+      const { checkout, client } = await checkoutServer({
+        "version.ts": (version) =>
+          `import { writeFileSync } from "node:fs";\n` +
+          `writeFileSync(new URL("./pulled.ts", import.meta.url), "export {};\\n");\n${version}`,
+      });
+      try {
+        expect(await client.callTool({ name: "credentials_list", arguments: {} })).toMatchObject(
+          refused,
+        );
+      } finally {
+        await client.close();
+        rmSync(checkout, { recursive: true, force: true });
+      }
+    });
+
+    it("refuses whatever a call returns once a pull lands mid-call", async () => {
       /** The executor writes into `src/` on every call, and the service `gitea` makes it throw. */
-      const { checkout, client } = await checkoutServer(
-        (operations) =>
+      const { checkout, client } = await checkoutServer({
+        "tool-operations.ts": (operations) =>
           `import { writeFileSync } from "node:fs";\n${operations.replace(
             "  const services = selectedServices(input.service);",
             `  writeFileSync(new URL(\`./pulled-\${String(input.service)}.ts\`, import.meta.url), "export {};\\n");
   if (input.service === "gitea") throw new Error("boom");
   const services = selectedServices(input.service);`,
           )}`,
-      );
+      });
       try {
-        const kept = await client.callTool({
-          name: "credentials_list",
-          arguments: { service: "github" },
-        });
-        expect(kept.isError).not.toBe(true);
+        /** Even a success may come from both trees mixed. */
+        expect(
+          await client.callTool({ name: "credentials_list", arguments: { service: "github" } }),
+        ).toMatchObject(refused);
 
-        const fresh = await checkoutServer(undefined, checkout);
+        const fresh = await checkoutServer({}, checkout);
         try {
           expect(
             await fresh.client.callTool({
