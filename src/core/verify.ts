@@ -17,8 +17,8 @@ export type Probe =
 
 /** What to send, and which answers mean no. */
 export interface ProbeRequest {
-  /** The full `Authorization` header value. */
-  readonly authorization: string;
+  /** The full `Authorization` header value, left out where the body carries the login. */
+  readonly authorization?: string;
   /** Statuses that mean the service refused the token. Defaults to 401 and 403. */
   readonly refusals?: readonly number[];
   /** A JSON body, which turns the GET into a POST, for a GraphQL endpoint. */
@@ -30,7 +30,7 @@ export interface ProbeRequest {
 /**
  * Send one authenticated request and classify the answer.
  * @param url - Endpoint on the credential's own host.
- * @param request - The header, the refusal statuses, an optional body and more headers.
+ * @param request - Any header, the refusal statuses, an optional body and more headers.
  * @returns {Promise<Probe>} The state, plus the response parts a caller may read.
  */
 export async function probe(url: string, request: ProbeRequest): Promise<Probe> {
@@ -40,7 +40,7 @@ export async function probe(url: string, request: ProbeRequest): Promise<Probe> 
     response = await fetch(url, {
       ...(query === undefined ? {} : { method: "POST", body: query }),
       headers: {
-        Authorization: authorization,
+        ...(authorization === undefined ? {} : { Authorization: authorization }),
         Accept: "application/json",
         "User-Agent": "@agntn/credentials",
         ...(query === undefined ? {} : { "Content-Type": "application/json" }),

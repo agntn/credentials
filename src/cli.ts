@@ -57,7 +57,7 @@ if (servesSource(argv)) {
       name: "credentials",
       version,
       description:
-        "See which GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin, Cursor Origin and Cloudflare credentials this machine holds",
+        "See which GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin, Cursor Origin, Tangled and Cloudflare credentials this machine holds",
       tools: credentialsTools,
       mcp: true,
     },

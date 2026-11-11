@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Ten services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Eleven services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -48,6 +48,7 @@ bitbucket: nothing found (set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBU
 azure-devops: nothing found (set AZURE_DEVOPS_EXT_PAT)
 pushin: nothing found (set PUSHIN_TOKEN or run pun login)
 cursor-origin: nothing found (set CURSOR_AUTH_TOKEN or run origin auth login)
+tangled: nothing found (set TANGLED_HANDLE and TANGLED_PASSWORD, an app password)
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
 
@@ -98,6 +99,7 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/azure-devops`  | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops` PAT file, default organization         |
 | `@agntn/credentials/pushin`        | `PUSHIN_TOKEN`                                                  | `pun/hosts.json`                                   |
 | `@agntn/credentials/cursor-origin` | `CURSOR_AUTH_TOKEN`                                             | `origin auth token`, `origin-cli/credentials.json` |
+| `@agntn/credentials/tangled`       | `TANGLED_HANDLE` with `TANGLED_PASSWORD`, `TANGLED_PDS_URL`     | none                                               |
 | `@agntn/credentials/cloudflare`    | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                     |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
@@ -124,7 +126,7 @@ Cloudflare throws `CredentialsError` with code `"token"` when there's no usable 
 
 Cloudflare also needs an account. It takes `accountId`, then `AGNTN_CLOUDFLARE_ACCOUNT_ID`, then `CLOUDFLARE_ACCOUNT_ID`. If none is set, the `cf` session's account is used. That only works when it reaches exactly one. Got a 401 back? Call it with `refresh: true`.
 
-Everything else lives in the types: [`src/core/forge.ts`](./src/core/forge.ts) and [`src/cloudflare.ts`](./src/cloudflare.ts).
+Everything else lives in the types: [`src/core/forge.ts`](./src/core/forge.ts), [`src/tangled.ts`](./src/tangled.ts) and [`src/cloudflare.ts`](./src/cloudflare.ts).
 
 ## 🤖 Agents
 

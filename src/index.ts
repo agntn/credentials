@@ -10,3 +10,4 @@ export type {
 } from "./core/types.ts";
 export type { ForgeCredential, ForgeOptions } from "./core/forge.ts";
 export type { CloudflareCredential, CloudflareOptions } from "./cloudflare.ts";
+export type { TangledCredential, TangledOptions } from "./tangled.ts";
