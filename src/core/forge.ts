@@ -257,12 +257,12 @@ function readTeaConfig(hostname: string): string | null {
 }
 
 /**
- * Read hut config at ~/.config/hut/config, the scfg file `hut.ts` describes.
+ * Read hut config at `hutConfigFile()`, the scfg file `hut.ts` describes.
  * @param hostname - Matched against each instance's domain, its subdomains and its service hosts.
  * @returns {string | null} The first matching instance's token, or null.
  */
 function readHutConfig(hostname: string): string | null {
-  const content = readFileSync(join(configDir(), "hut", "config"), "utf-8");
+  const content = readFileSync(hutConfigFile(), "utf-8");
   const instance = hutInstanceFor(hutInstances(content), hostname);
   return instance === undefined ? null : hutToken(instance);
 }
@@ -271,6 +271,18 @@ function readHutConfig(hostname: string): string | null {
 
 export function configDir(): string {
   return process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+}
+
+/**
+ * Where hut keeps its config: Go's `os.UserConfigDir`, which skips XDG on macOS and Windows.
+ * @returns {string} The path of `hut/config`.
+ */
+export function hutConfigFile(): string {
+  if (process.platform === "darwin") {
+    return join(homedir(), "Library", "Application Support", "hut", "config");
+  }
+  if (process.platform === "win32") return join(process.env.APPDATA ?? "", "hut", "config");
+  return join(configDir(), "hut", "config");
 }
 
 export function ghConfigDir(): string {

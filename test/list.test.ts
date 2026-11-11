@@ -386,7 +386,7 @@ describe("sourcehut.list", () => {
         '  origin "srht.corp.example"',
         `  access-token-cmd "${process.execPath}" -p '"hut-corp"'`,
         "  meta {",
-        '    origin "https://accounts.corp.example"',
+        '    origin "https://accounts.corp.example:8443/"',
         "  }",
         "}",
         'instance "sr.ht-again" {',
@@ -408,7 +408,7 @@ describe("sourcehut.list", () => {
     ]);
     expect(sent.map((request) => request.url)).toEqual([
       "https://meta.sr.ht/query",
-      "https://accounts.corp.example/query",
+      "https://accounts.corp.example:8443/query",
       "https://meta.sr.ht/query",
     ]);
   });

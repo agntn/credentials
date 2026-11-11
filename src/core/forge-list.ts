@@ -17,6 +17,7 @@ import {
   getYamlMappingSection,
   ghConfigDir,
   hostnameOfUrl,
+  hutConfigFile,
   parseYamlListEntries,
   runCli,
 } from "./forge.ts";
@@ -241,7 +242,7 @@ function teaLogins(envWins: boolean): Candidate[] {
  * @returns {Candidate[]} One entry per instance.
  */
 function hutLogins(envWins: boolean): Candidate[] {
-  const content = readFileSync(join(configDir(), "hut", "config"), "utf-8");
+  const content = readFileSync(hutConfigFile(), "utf-8");
   const instances = hutInstances(content);
   return instances.map((instance) =>
     loginCandidate({

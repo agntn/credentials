@@ -81,13 +81,29 @@ describe("sourcehut.resolve", () => {
         '  origin "srht.corp.example"',
         '  access-token "corp"',
         "  git {",
-        '    origin "https://code.corp.example"',
+        '    origin "https://code.corp.example:8443"',
         "  }",
         "}",
       ].join("\n"),
     );
 
     expect(resolve({ baseURL: "https://code.corp.example" })?.token).toBe("corp");
+  });
+
+  it("reads hut's file where Go puts it on macOS, not under XDG", () => {
+    const home = mkdtempSync(join(tmpdir(), "credentials-home-"));
+    const file = join(home, "Library", "Application Support", "hut", "config");
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(file, 'instance "sr.ht" {\n  origin "sr.ht"\n  access-token "mac"\n}\n');
+    writeHutConfig('instance "sr.ht" {\n  origin "sr.ht"\n  access-token "xdg"\n}\n');
+    vi.stubEnv("HOME", home);
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
+    try {
+      expect(resolve()?.token).toBe("mac");
+    } finally {
+      Object.defineProperty(process, "platform", platform);
+    }
   });
 
   it("never hands an instance's token to its parent domain, which hut would still match", () => {

@@ -1,5 +1,5 @@
 /**
- * hut, the Sourcehut CLI, keeps its logins in `$XDG_CONFIG_HOME/hut/config`:
+ * hut, the Sourcehut CLI, keeps its logins in `hut/config` under the user config dir:
  *
  *   instance "sr.ht" {
  *     origin "sr.ht"
@@ -27,8 +27,8 @@ export interface HutInstance {
   readonly token?: string;
   /** The `access-token-cmd` words, command first. */
   readonly command?: readonly string[];
-  /** Hosts set per service, such as the `origin` inside a `meta` block. */
-  readonly serviceHosts: Readonly<Record<string, string>>;
+  /** Origins set per service, such as the `origin` inside a `meta` block, as written. */
+  readonly serviceOrigins: Readonly<Record<string, string>>;
 }
 
 interface Directive {
@@ -39,7 +39,7 @@ interface Directive {
 
 /**
  * Read every instance from the text of hut's config file.
- * @param content - The file, `$XDG_CONFIG_HOME/hut/config`.
+ * @param content - The file at `hutConfigFile()`.
  * @returns {HutInstance[]} The instances in file order.
  */
 export function hutInstances(content: string): HutInstance[] {
@@ -64,7 +64,7 @@ export function hutInstanceFor(
     (instance) =>
       hostname === instance.origin ||
       hostname.endsWith(`.${instance.origin}`) ||
-      Object.values(instance.serviceHosts).includes(hostname),
+      Object.values(instance.serviceOrigins).some((origin) => hostOf(origin) === hostname),
   );
 }
 
@@ -95,8 +95,9 @@ export function hutToken(instance: HutInstance): string | null {
  * @returns {string} Its `/query` URL.
  */
 export function hutMetaQueryUrl(instance: HutInstance): string {
-  const meta = instance.serviceHosts.meta ?? `meta.${instance.origin}`;
-  return `https://${meta}/query`;
+  const meta = instance.serviceOrigins.meta ?? `meta.${instance.origin}`;
+  const base = meta.includes("://") ? meta : `https://${meta}`;
+  return `${base.replace(/\/+$/, "")}/query`;
 }
 
 /**
@@ -115,22 +116,22 @@ function instanceOf(directive: Directive): HutInstance {
     origin,
     ...(token === undefined ? {} : { token }),
     ...(command === undefined || command.length === 0 ? {} : { command }),
-    serviceHosts: serviceHostsOf(directive),
+    serviceOrigins: serviceOriginsOf(directive),
   };
 }
 
 /**
- * Collect each service's `origin` host from an instance block.
+ * Collect each service's `origin` from an instance block, port and scheme kept.
  * @param directive - The `instance` block.
- * @returns {Record<string, string>} Service name to host.
+ * @returns {Record<string, string>} Service name to origin.
  */
-function serviceHostsOf(directive: Directive): Record<string, string> {
-  const hosts: Record<string, string> = {};
+function serviceOriginsOf(directive: Directive): Record<string, string> {
+  const origins: Record<string, string> = {};
   for (const child of directive.children) {
     const origin = paramOf(child, "origin");
-    if (child.children.length > 0 && origin !== undefined) hosts[child.name] = hostOf(origin);
+    if (child.children.length > 0 && origin !== undefined) origins[child.name] = origin;
   }
-  return hosts;
+  return origins;
 }
 
 /**
