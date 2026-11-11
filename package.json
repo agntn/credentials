@@ -1,7 +1,7 @@
 {
   "name": "@agntn/credentials",
   "version": "0.0.2",
-  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps and Cloudflare.",
+  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin and Cloudflare.",
   "keywords": [
     "agents",
     "azure-devops",
@@ -12,6 +12,7 @@
     "gitee",
     "github",
     "gitlab",
+    "pushin",
     "sourcehut",
     "token"
   ],
@@ -75,6 +76,10 @@
     "./mcp": {
       "types": "./dist/mcp.d.mts",
       "import": "./dist/mcp.mjs"
+    },
+    "./pushin": {
+      "types": "./dist/pushin.d.mts",
+      "import": "./dist/pushin.mjs"
     },
     "./sourcehut": {
       "types": "./dist/sourcehut.d.mts",

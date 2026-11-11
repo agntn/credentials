@@ -43,6 +43,7 @@ describe("credentials MCP server", () => {
             "sourcehut",
             "bitbucket",
             "azure-devops",
+            "pushin",
             "cloudflare",
           ],
         },
@@ -85,6 +86,7 @@ describe("credentials MCP server", () => {
         "sourcehut: nothing found (set SRHT_TOKEN or run hut init)",
         "bitbucket: nothing found (set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL)",
         "azure-devops: nothing found (set AZURE_DEVOPS_EXT_PAT)",
+        "pushin: nothing found (set PUSHIN_TOKEN or run pun login)",
         "cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)",
         "Unchecked entries are only known to exist. Run again with verify (--verify in the CLI) to ask each service.",
       ].join("\n"),
@@ -108,7 +110,7 @@ describe("credentials MCP server", () => {
     expect(text(unknown)).toContain('unknown property "servic"');
     expect(outside.isError).toBe(true);
     expect(text(outside)).toContain(
-      "must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, cloudflare",
+      "must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cloudflare",
     );
   });
 });

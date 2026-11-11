@@ -10,7 +10,8 @@
  *
  * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
  * Bitbucket, which has no official CLI at all. Azure DevOps keeps its login in the keyring,
- * so `azure-devops.ts` reads only the file `az devops login` falls back to on Linux.
+ * so `azure-devops.ts` reads only the file `az devops login` falls back to on Linux. `pun`
+ * prints only its own file, so `pushin.ts` reads that file by instance URL instead.
  */
 
 import { execFileSync } from "node:child_process";
@@ -27,7 +28,8 @@ export type Forge =
   | "gitee"
   | "sourcehut"
   | "bitbucket"
-  | "azure-devops";
+  | "azure-devops"
+  | "pushin";
 
 /** A forge token and the step of the chain that found it. */
 export interface ForgeCredential {
@@ -61,6 +63,7 @@ export const DEFAULT_HOSTS: Record<Forge, string> = {
   sourcehut: "sr.ht",
   bitbucket: "bitbucket.org",
   "azure-devops": "dev.azure.com",
+  pushin: "pushin.eu",
 };
 
 export const ENV_KEYS: Record<Forge, readonly string[]> = {
@@ -74,6 +77,8 @@ export const ENV_KEYS: Record<Forge, readonly string[]> = {
   bitbucket: ["BITBUCKET_TOKEN", "BITBUCKET_API_TOKEN"],
   /** The one `az devops` reads. */
   "azure-devops": ["AZURE_DEVOPS_EXT_PAT"],
+  /** The one `pun` reads, ahead of its own login. */
+  pushin: ["PUSHIN_TOKEN"],
 };
 
 /** Token variables that only work with a login beside them. */
@@ -164,11 +169,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
     }
     case "gitlab":
       return runCli("glab", ["config", "get", "token", "--host", hostname]);
-    case "gitea":
-    case "gitee":
-    case "sourcehut":
-    case "bitbucket":
-    case "azure-devops":
+    default:
       return null;
   }
 }
@@ -229,12 +230,10 @@ function fromConfig(forge: Forge, hostname: string, account?: string): string | 
         return readGlabConfig(hostname);
       case "gitea":
         return readTeaConfig(hostname);
-      case "gitee":
-      case "bitbucket":
-      case "azure-devops":
-        return null;
       case "sourcehut":
         return readHutConfig(hostname);
+      default:
+        return null;
     }
   } catch {
     return null;

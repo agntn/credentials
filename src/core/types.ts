@@ -10,6 +10,7 @@ export const SERVICES = [
   "sourcehut",
   "bitbucket",
   "azure-devops",
+  "pushin",
   "cloudflare",
 ] as const;
 

@@ -9,6 +9,7 @@ import * as gitea from "../src/gitea.ts";
 import * as gitee from "../src/gitee.ts";
 import * as github from "../src/github.ts";
 import * as gitlab from "../src/gitlab.ts";
+import * as pushin from "../src/pushin.ts";
 import * as sourcehut from "../src/sourcehut.ts";
 import { SERVICES } from "../src/core/types.ts";
 
@@ -30,6 +31,7 @@ describe("@agntn/credentials", () => {
       gitee,
       github,
       gitlab,
+      pushin,
       sourcehut,
     ]) {
       expect(Object.keys(service).sort()).toEqual(["list", "resolve"]);
