@@ -131,6 +131,18 @@ describe("cursorOrigin.resolve", () => {
     expect(resolve()).toBeNull();
   });
 
+  it("gives a baseURL outside origin.cursor.com no saved login, even with that host name", () => {
+    originLogin({ accessToken: jwt(Date.now() + HOUR) });
+
+    expect(resolve({ baseURL: "http://origin.cursor.com" })).toBeNull();
+    expect(resolve({ baseURL: "not a url" })).toBeNull();
+    expect(resolve({ baseURL: "http://origin.cursor.com", token: "mine" })).toMatchObject({
+      source: "explicit",
+    });
+    vi.stubEnv("CURSOR_AUTH_TOKEN", "oat_env");
+    expect(resolve({ baseURL: "not a url" })).toEqual({ token: "oat_env", source: "env" });
+  });
+
   it("skips a saved token that has expired, since only origin can refresh it", () => {
     originLogin({ accessToken: jwt(Date.now() - 1000) });
 

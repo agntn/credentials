@@ -1,4 +1,10 @@
-import { type ForgeCredential, type ForgeOptions, resolveForge } from "./core/forge.ts";
+import {
+  ENV_KEYS,
+  envCredential,
+  type ForgeCredential,
+  type ForgeOptions,
+  resolveForge,
+} from "./core/forge.ts";
 import { listForge } from "./core/forge-list.ts";
 import { isOriginInstance } from "./core/origin.ts";
 import type { CredentialInfo, ListOptions } from "./core/types.ts";
@@ -12,10 +18,23 @@ export type { ForgeCredential, ForgeOptions } from "./core/forge.ts";
  */
 export function resolve(options?: ForgeOptions): ForgeCredential | null {
   const baseURL = options?.baseURL;
-  if (baseURL === undefined || !isOriginInstance(baseURL)) {
-    return resolveForge("cursor-origin", options);
+  if (baseURL === undefined || isOriginInstance(baseURL)) {
+    return resolveForge("cursor-origin", { ...options, baseURL: undefined });
   }
-  return resolveForge("cursor-origin", { ...options, baseURL: undefined });
+  if (options?.token !== undefined) return resolveForge("cursor-origin", options);
+  return fromVariables();
+}
+
+/**
+ * Read CURSOR_AUTH_TOKEN alone, for a `baseURL` no Origin login belongs to.
+ * @returns {ForgeCredential | null} The token, or null when it isn't set.
+ */
+function fromVariables(): ForgeCredential | null {
+  for (const key of ENV_KEYS["cursor-origin"]) {
+    const credential = envCredential(key);
+    if (credential !== undefined) return credential;
+  }
+  return null;
 }
 
 /**
