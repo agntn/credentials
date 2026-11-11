@@ -110,9 +110,11 @@ describe("cloudflare.resolve", () => {
     vi.stubEnv("CLOUDFLARE_API_TOKEN", "env-token");
     const { resolve } = await load();
 
-    await expect(resolve()).rejects.toThrow(
-      "Set AGNTN_CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_ACCOUNT_ID: CLOUDFLARE_API_TOKEN needs an account",
-    );
+    await expect(resolve()).rejects.toMatchObject({
+      code: "account",
+      message:
+        "Set AGNTN_CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_ACCOUNT_ID: CLOUDFLARE_API_TOKEN needs an account",
+    });
   });
 
   it("prefers AGNTN_CLOUDFLARE_ACCOUNT_ID and falls back to CLOUDFLARE_ACCOUNT_ID", async () => {
@@ -155,9 +157,11 @@ describe("cloudflare.resolve", () => {
     cf.whoami = loggedIn(["acct-1", "acct-2"]);
     const { resolve } = await load();
 
-    await expect(resolve()).rejects.toThrow(
-      "Set AGNTN_CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_ACCOUNT_ID: the cf OAuth session can reach 2 accounts",
-    );
+    await expect(resolve()).rejects.toMatchObject({
+      code: "account",
+      message:
+        "Set AGNTN_CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_ACCOUNT_ID: the cf OAuth session can reach 2 accounts",
+    });
 
     vi.stubEnv("AGNTN_CLOUDFLARE_ACCOUNT_ID", "acct-2");
     await expect(resolve()).resolves.toMatchObject({ token: "oauth-1", accountId: "acct-2" });
@@ -227,7 +231,7 @@ describe("cloudflare.resolve", () => {
     const { resolve } = await load();
 
     const error = await resolve().catch((failure: unknown) => failure);
-    expect(error).toMatchObject({ name: "CredentialsError", service: "cloudflare" });
+    expect(error).toMatchObject({ name: "CredentialsError", service: "cloudflare", code: "token" });
     expect(messages(error)).toContain(
       "cf CLI not found. Set CLOUDFLARE_API_TOKEN, or run `cf auth login`",
     );
@@ -240,7 +244,9 @@ describe("cloudflare.resolve", () => {
     };
     const { resolve } = await load();
 
-    await expect(resolve()).rejects.toThrow("cf CLI reports no OAuth session");
+    const error = await resolve().catch((failure: unknown) => failure);
+    expect(error).toMatchObject({ code: "token" });
+    expect(messages(error)).toContain("cf CLI reports no OAuth session");
   });
 
   it("reports a credentials file it cannot parse without quoting it", async () => {
@@ -252,6 +258,7 @@ describe("cloudflare.resolve", () => {
     const { resolve } = await load();
 
     const error = await resolve().catch((failure: unknown) => failure);
+    expect(error).toMatchObject({ code: "token" });
     expect(messages(error)).toContain("Cannot read the cf OAuth credentials file");
     expect(messages(error)).not.toContain("SECRET");
   });
