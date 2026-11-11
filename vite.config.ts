@@ -14,6 +14,8 @@ export default defineConfig({
           /* A probe carries the response Headers; nothing writes to them. */
           allow: [
             { from: "file", name: ["Probe"] },
+            /* Signals get listened to and promises chained, never written. */
+            { from: "lib", name: ["AbortSignal", "Promise"] },
             {
               from: "package",
               name: ["ExtensionAPI"],
