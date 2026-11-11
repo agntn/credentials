@@ -17,6 +17,7 @@ export default defineBuildConfig({
         "./src/gitlab.ts",
         "./src/pushin.ts",
         "./src/sourcehut.ts",
+        "./src/tangled.ts",
         "./src/cli.ts",
         "./src/ai.ts",
         "./src/mcp.ts",

@@ -12,6 +12,7 @@ import * as github from "../src/github.ts";
 import * as gitlab from "../src/gitlab.ts";
 import * as pushin from "../src/pushin.ts";
 import * as sourcehut from "../src/sourcehut.ts";
+import * as tangled from "../src/tangled.ts";
 import { SERVICES } from "../src/core/types.ts";
 
 describe("@agntn/credentials", () => {
@@ -35,6 +36,7 @@ describe("@agntn/credentials", () => {
       gitlab,
       pushin,
       sourcehut,
+      tangled,
     ]) {
       expect(Object.keys(service).sort()).toEqual(["list", "resolve"]);
     }

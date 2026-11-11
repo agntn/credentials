@@ -19,6 +19,7 @@ import { list as listGithub } from "./github.ts";
 import { list as listGitlab } from "./gitlab.ts";
 import { list as listPushin } from "./pushin.ts";
 import { list as listSourcehut } from "./sourcehut.ts";
+import { list as listTangled } from "./tangled.ts";
 import { SERVICES } from "./tool-contract.ts";
 
 /**
@@ -54,6 +55,7 @@ const LISTERS: Record<
   "azure-devops": listAzureDevOps,
   pushin: listPushin,
   "cursor-origin": listCursorOrigin,
+  tangled: listTangled,
   cloudflare: listCloudflare,
 };
 
@@ -68,6 +70,7 @@ const SETUP: Record<Service, string> = {
   "azure-devops": "set AZURE_DEVOPS_EXT_PAT",
   pushin: "set PUSHIN_TOKEN or run pun login",
   "cursor-origin": "set CURSOR_AUTH_TOKEN or run origin auth login",
+  tangled: "set TANGLED_HANDLE and TANGLED_PASSWORD, an app password",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };
 

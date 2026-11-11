@@ -12,6 +12,7 @@ export const SERVICES = [
   "azure-devops",
   "pushin",
   "cursor-origin",
+  "tangled",
   "cloudflare",
 ] as const;
 

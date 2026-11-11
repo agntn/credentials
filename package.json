@@ -1,7 +1,7 @@
 {
   "name": "@agntn/credentials",
   "version": "0.0.2",
-  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin, Cursor Origin and Cloudflare.",
+  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin, Cursor Origin, Tangled and Cloudflare.",
   "keywords": [
     "agents",
     "azure-devops",
@@ -15,6 +15,7 @@
     "gitlab",
     "pushin",
     "sourcehut",
+    "tangled",
     "token"
   ],
   "homepage": "https://github.com/agntn/credentials#readme",
@@ -89,6 +90,10 @@
     "./sourcehut": {
       "types": "./dist/sourcehut.d.mts",
       "import": "./dist/sourcehut.mjs"
+    },
+    "./tangled": {
+      "types": "./dist/tangled.d.mts",
+      "import": "./dist/tangled.mjs"
     }
   },
   "publishConfig": {
