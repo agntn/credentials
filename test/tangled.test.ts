@@ -97,6 +97,19 @@ describe("tangled.resolve", () => {
     vi.stubEnv("TANGLED_PASSWORD", "abcd-efgh-ijkl-mnop");
     expect(resolve()).not.toHaveProperty("pds");
   });
+
+  it("hands out a PDS a client can append /xrpc to, and nothing for one it can't", () => {
+    envLogin("https://pds.example.com/");
+    expect(resolve()).toMatchObject({ pds: "https://pds.example.com" });
+
+    for (const pds of ["file:///etc/passwd", "pds.example.com"]) {
+      vi.stubEnv("TANGLED_PDS_URL", pds);
+      expect(resolve()).toBeNull();
+    }
+    expect(
+      resolve({ identifier: "did:plc:bob", password: "pass-word", pds: "ftp://x" }),
+    ).toBeNull();
+  });
 });
 
 describe("tangled.list", () => {
@@ -145,7 +158,8 @@ describe("tangled.list", () => {
     expect(await list({ verify: true })).toMatchObject([
       {
         host: "any",
-        note: "TANGLED_PDS_URL isn't an http(s) URL, so the password is never sent anywhere to check",
+        active: false,
+        note: "TANGLED_PDS_URL isn't an http(s) URL, so resolve skips this login",
       },
     ]);
     expect(fetch).not.toHaveBeenCalled();

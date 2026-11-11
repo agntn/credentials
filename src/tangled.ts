@@ -43,13 +43,15 @@ const SESSION_TIMEOUT_MS = 10_000;
 /**
  * Find a Tangled login: the explicit pair, then TANGLED_HANDLE with TANGLED_PASSWORD.
  * @param options - Explicit identifier, app password and PDS.
- * @returns {TangledCredential | null} The login and its source, or null.
+ * @returns {TangledCredential | null} The login, or null, also for a non-http(s) PDS.
  */
 export function resolve(options?: TangledOptions): TangledCredential | null {
   const login = givenLogin(options);
   if (login === null) return null;
-  const pds = nonEmptyString(options?.pds) ?? envValue(PDS);
-  return pds === undefined ? login : { ...login, pds };
+  const setting = nonEmptyString(options?.pds) ?? envValue(PDS);
+  if (setting === undefined) return login;
+  const pds = pdsBase(setting);
+  return pds === undefined ? null : { ...login, pds };
 }
 
 /**
@@ -91,16 +93,17 @@ export async function list(options?: ListOptions): Promise<CredentialInfo[]> {
   const password = envValue(PASSWORD);
   if (password === undefined) return [];
   const identifier = envValue(HANDLE);
-  const pds = pdsBase(envValue(PDS));
+  const setting = envValue(PDS);
+  const pds = pdsBase(setting);
   const info = compact<CredentialInfo>({
     service: SERVICE,
     host: pds === undefined ? "any" : new URL(pds).host,
     source: "env",
     origin: PASSWORD,
-    active: identifier !== undefined,
+    active: identifier !== undefined && (setting === undefined || pds !== undefined),
     state: "unchecked",
     account: identifier,
-    note: envNote(identifier, pds),
+    note: envNote(identifier, setting),
   });
   if (options?.verify !== true || identifier === undefined || pds === undefined) return [info];
   return [await verified(info, { identifier, password, pds })];
@@ -120,17 +123,19 @@ function pdsBase(url: string | undefined): string | undefined {
 /**
  * Why the login goes unused or unchecked.
  * @param identifier - TANGLED_HANDLE, if set.
- * @param pds - The PDS base, if usable.
+ * @param setting - TANGLED_PDS_URL, if set.
  * @returns {string | undefined} The note, or undefined.
  */
-function envNote(identifier: string | undefined, pds: string | undefined): string | undefined {
+function envNote(identifier: string | undefined, setting: string | undefined): string | undefined {
   if (identifier === undefined) {
     return `${PASSWORD} goes out with ${HANDLE}, which isn't set, so resolve skips it`;
   }
-  if (pds !== undefined) return undefined;
-  return process.env[PDS]
-    ? `${PDS} isn't an http(s) URL, so the password is never sent anywhere to check`
-    : `${PDS} isn't set, so the PDS comes from the handle and the password is never sent anywhere to check`;
+  if (setting === undefined) {
+    return `${PDS} isn't set, so the PDS comes from the handle and the password is never sent anywhere to check`;
+  }
+  return pdsBase(setting) === undefined
+    ? `${PDS} isn't an http(s) URL, so resolve skips this login`
+    : undefined;
 }
 
 /**
