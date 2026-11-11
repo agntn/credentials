@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vite-plus/test";
 import pkg from "../package.json" with { type: "json" };
 import * as root from "../src/index.ts";
@@ -5,6 +6,7 @@ import * as cloudflare from "../src/cloudflare.ts";
 import * as gitea from "../src/gitea.ts";
 import * as github from "../src/github.ts";
 import * as gitlab from "../src/gitlab.ts";
+import { SERVICES } from "../src/core/types.ts";
 
 describe("@agntn/credentials", () => {
   it("exports the version from package.json", () => {
@@ -18,6 +20,16 @@ describe("@agntn/credentials", () => {
   it("gives every service subpath resolve and list", () => {
     for (const service of [cloudflare, gitea, github, gitlab]) {
       expect(Object.keys(service).sort()).toEqual(["list", "resolve"]);
+    }
+  });
+
+  it("builds, exports and documents a subpath for every service", () => {
+    const build = readFileSync(new URL("../build.config.ts", import.meta.url), "utf8");
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    for (const service of SERVICES) {
+      expect(build).toContain(`"./src/${service}.ts"`);
+      expect(Object.keys(pkg.exports)).toContain(`./${service}`);
+      expect(readme).toContain(`| \`@agntn/credentials/${service}\``);
     }
   });
 });
