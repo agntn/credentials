@@ -29,7 +29,7 @@ Keep AGENTS.md updated with project status.
 - **Lint**: `vp lint` + `vp fmt` (Oxlint + Oxfmt) through `@agntn/ox`
 - **Typecheck**: tsc (native TypeScript 7)
 - **Release**: changelogen, npm through GitHub Actions OIDC trusted publishing
-- **Package manager**: pnpm
+- **Package manager**: pnpm, versions in the catalogs of `pnpm-workspace.yaml`
 
 ## Scripts
 
