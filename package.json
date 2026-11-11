@@ -1,13 +1,14 @@
 {
   "name": "@agntn/credentials",
   "version": "0.0.2",
-  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin and Cloudflare.",
+  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin, Cursor Origin and Cloudflare.",
   "keywords": [
     "agents",
     "azure-devops",
     "bitbucket",
     "cloudflare",
     "credentials",
+    "cursor-origin",
     "gitea",
     "gitee",
     "github",
@@ -56,6 +57,10 @@
     "./cloudflare": {
       "types": "./dist/cloudflare.d.mts",
       "import": "./dist/cloudflare.mjs"
+    },
+    "./cursor-origin": {
+      "types": "./dist/cursor-origin.d.mts",
+      "import": "./dist/cursor-origin.mjs"
     },
     "./gitea": {
       "types": "./dist/gitea.d.mts",

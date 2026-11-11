@@ -11,7 +11,8 @@
  * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
  * Bitbucket, which has no official CLI at all. Azure DevOps keeps its login in the keyring,
  * so `azure-devops.ts` reads only the file `az devops login` falls back to on Linux. `pun`
- * prints only its own file, so `pushin.ts` reads that file by instance URL instead.
+ * prints only its own file, so `pushin.ts` reads that file by instance URL instead. `origin`
+ * refreshes its short-lived login on every `origin auth token`, so its file is only a fallback.
  */
 
 import { execFileSync } from "node:child_process";
@@ -19,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { hutInstanceFor, hutInstances, hutToken } from "./hut.ts";
+import { ORIGIN_HOST, originLogin } from "./origin.ts";
 import type { CredentialSource } from "./types.ts";
 
 export type Forge =
@@ -29,7 +31,8 @@ export type Forge =
   | "sourcehut"
   | "bitbucket"
   | "azure-devops"
-  | "pushin";
+  | "pushin"
+  | "cursor-origin";
 
 /** A forge token and the step of the chain that found it. */
 export interface ForgeCredential {
@@ -64,6 +67,7 @@ export const DEFAULT_HOSTS: Record<Forge, string> = {
   bitbucket: "bitbucket.org",
   "azure-devops": "dev.azure.com",
   pushin: "pushin.eu",
+  "cursor-origin": ORIGIN_HOST,
 };
 
 export const ENV_KEYS: Record<Forge, readonly string[]> = {
@@ -79,6 +83,8 @@ export const ENV_KEYS: Record<Forge, readonly string[]> = {
   "azure-devops": ["AZURE_DEVOPS_EXT_PAT"],
   /** The one `pun` reads, ahead of its own login. */
   pushin: ["PUSHIN_TOKEN"],
+  /** The bearer `origin` sends as is. `CURSOR_API_KEY` is not one: `origin` trades it. */
+  "cursor-origin": ["CURSOR_AUTH_TOKEN"],
 };
 
 /** Token variables that only work with a login beside them. */
@@ -169,6 +175,8 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
     }
     case "gitlab":
       return runCli("glab", ["config", "get", "token", "--host", hostname]);
+    case "cursor-origin":
+      return hostname === ORIGIN_HOST ? runCli("origin", ["auth", "token"]) : null;
     default:
       return null;
   }
@@ -190,9 +198,11 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
 const CLI_TOKEN_VARIABLES: Record<ForgeCli, readonly string[]> = {
   gh: ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"],
   glab: ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"],
+  /** Without the endpoint, `origin` answers for origin.cursor.com, the host it was asked about. */
+  origin: ["CURSOR_AUTH_TOKEN", "CURSOR_ORIGIN_ENDPOINT"],
 };
 
-export type ForgeCli = "gh" | "glab";
+export type ForgeCli = "gh" | "glab" | "origin";
 
 export function runCli(command: ForgeCli, args: readonly string[]): string | null {
   try {
@@ -232,6 +242,8 @@ function fromConfig(forge: Forge, hostname: string, account?: string): string | 
         return readTeaConfig(hostname);
       case "sourcehut":
         return readHutConfig(hostname);
+      case "cursor-origin":
+        return readOriginConfig(hostname);
       default:
         return null;
     }
@@ -320,6 +332,18 @@ function readHutConfig(hostname: string): string | null {
   const content = readFileSync(hutConfigFile(), "utf-8");
   const instance = hutInstanceFor(hutInstances(content), hostname);
   return instance === undefined ? null : hutToken(instance);
+}
+
+/**
+ * Read the saved `origin` token while it's fresh and no CURSOR_API_KEY outranks it.
+ * @param hostname - The host the caller targets.
+ * @returns {string | null} The token, or null for another host, an expired token or a set key.
+ */
+function readOriginConfig(hostname: string): string | null {
+  if (hostname !== ORIGIN_HOST || process.env.CURSOR_API_KEY) return null;
+  const login = originLogin();
+  if (login === undefined) return null;
+  return login.expiresAt !== undefined && login.expiresAt <= Date.now() ? null : login.token;
 }
 
 // --- Helpers ---

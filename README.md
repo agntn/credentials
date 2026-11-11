@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Nine services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Ten services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Every package that talks to GitHub or Cloudflare ends up with its own token hunt
 ## ✨ Features
 
 - 🔗 **One chain, every service.** Explicit value, then env, then the CLI, then its config file.
-- 🐙 **GitHub, GitLab, Gitea, Sourcehut, Pushin.** `gh`, `glab`, `tea`, `hut` and `pun` logins work as they are.
+- 🐙 **GitHub, GitLab, Gitea, Sourcehut, Pushin, Cursor Origin.** `gh`, `glab`, `tea`, `hut`, `pun` and `origin` logins work as they are.
 - 👥 **Pick a GitHub account.** Got two `gh` logins? Name one. The active login stays put.
 - 🏠 **Self-hosted hosts.** Pass a `baseURL` and the CLI login for that host is used.
 - ☁️ **Cloudflare without an API token.** The `cf` OAuth session is enough. It's read again once it expires.
@@ -47,6 +47,7 @@ sourcehut: nothing found (set SRHT_TOKEN or run hut init)
 bitbucket: nothing found (set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL)
 azure-devops: nothing found (set AZURE_DEVOPS_EXT_PAT)
 pushin: nothing found (set PUSHIN_TOKEN or run pun login)
+cursor-origin: nothing found (set CURSOR_AUTH_TOKEN or run origin auth login)
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
 
@@ -86,17 +87,18 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 
 ## 🗺️ Services
 
-| Subpath                           | Env                                                             | CLI and config                                 |
-| --------------------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
-| `@agntn/credentials/github`       | `GH_TOKEN`, `GITHUB_TOKEN`                                      | `gh auth token`, `gh/hosts.yml`                |
-| `@agntn/credentials/gitlab`       | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_PAT`                        | `glab config get token`, `glab-cli/config.yml` |
-| `@agntn/credentials/gitea`        | `GITEA_TOKEN`                                                   | `tea/config.yml`                               |
-| `@agntn/credentials/gitee`        | `GITEE_TOKEN`, `GITEE_ACCESS_TOKEN`                             | none                                           |
-| `@agntn/credentials/sourcehut`    | `SRHT_TOKEN`                                                    | `hut/config`                                   |
-| `@agntn/credentials/bitbucket`    | `BITBUCKET_TOKEN`, `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL` | none                                           |
-| `@agntn/credentials/azure-devops` | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops` PAT file, default organization     |
-| `@agntn/credentials/pushin`       | `PUSHIN_TOKEN`                                                  | `pun/hosts.json`                               |
-| `@agntn/credentials/cloudflare`   | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                 |
+| Subpath                            | Env                                                             | CLI and config                                     |
+| ---------------------------------- | --------------------------------------------------------------- | -------------------------------------------------- |
+| `@agntn/credentials/github`        | `GH_TOKEN`, `GITHUB_TOKEN`                                      | `gh auth token`, `gh/hosts.yml`                    |
+| `@agntn/credentials/gitlab`        | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_PAT`                        | `glab config get token`, `glab-cli/config.yml`     |
+| `@agntn/credentials/gitea`         | `GITEA_TOKEN`                                                   | `tea/config.yml`                                   |
+| `@agntn/credentials/gitee`         | `GITEE_TOKEN`, `GITEE_ACCESS_TOKEN`                             | none                                               |
+| `@agntn/credentials/sourcehut`     | `SRHT_TOKEN`                                                    | `hut/config`                                       |
+| `@agntn/credentials/bitbucket`     | `BITBUCKET_TOKEN`, `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL` | none                                               |
+| `@agntn/credentials/azure-devops`  | `AZURE_DEVOPS_EXT_PAT`                                          | `az devops` PAT file, default organization         |
+| `@agntn/credentials/pushin`        | `PUSHIN_TOKEN`                                                  | `pun/hosts.json`                                   |
+| `@agntn/credentials/cursor-origin` | `CURSOR_AUTH_TOKEN`                                             | `origin auth token`, `origin-cli/credentials.json` |
+| `@agntn/credentials/cloudflare`    | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                     |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
 
@@ -117,6 +119,16 @@ Keyring was plan A. Plan B is a text file. On a headless box, plan B can be the 
 Pushin slots into the same chain as the rest: an explicit token, then `PUSHIN_TOKEN`, then whatever `pun login` saved. The package reads `pun/hosts.json` directly. `pun auth token` would only hand back the same token from the same file, so that subprocess is pure ceremony.
 
 `resolve()` picks a saved token by the origin of `baseURL`, pushin.eu by default. `PUSHIN_URL` doesn't move that choice, so your company instance's token never lands on pushin.eu. `list({ verify: true })` checks each token as a bearer at `/api/v1/user`, where `pun` sends it: `PUSHIN_URL` for `PUSHIN_TOKEN`, the saved URL for each login.
+
+For Cursor Origin, use `@agntn/credentials/cursor-origin`. The chain starts with your explicit token, then `CURSOR_AUTH_TOKEN`. Next comes `origin auth token`, then the saved login in `origin-cli/credentials.json`. Yes, the CLI is called `origin`, like your git remote.
+
+`origin auth token` trades `CURSOR_API_KEY` for a short-lived token or refreshes the login. The package never sends the key itself. While it's set, the saved login sits out, same as in `origin`.
+
+That saved token goes stale fast. It lasts minutes, and only `origin` can refresh it. On macOS, `origin` uses the keychain first. The file is its fallback. Without the CLI, an expired file token gets skipped. `resolve()` reads the CLI and the file only for origin.cursor.com: no `baseURL`, or one on api.cursor.com or origin.cursor.com. Other hosts get only the variable.
+
+`list({ verify: true })` sends tokens as bearers to `/v1/origin/rate_limit`. It accepts every Origin token and costs zero rate limit points. The `CURSOR_AUTH_TOKEN` check uses `CURSOR_ORIGIN_ENDPOINT`, or api.cursor.com by default. An endpoint `origin` wouldn't trust gets nothing. A 401 means rejection. A 403 might be your team's IP allowlist, not a bad token.
+
+An expired saved token is never sent. It's listed as `expired`, with a note that the next `origin` command refreshes it.
 
 Cloudflare throws `CredentialsError` with code `"token"` when there's no usable token, or `"account"` when there's a token but no single account id. Branch on `code`, not the message. The message is for humans, and its wording can change. Matching its text is a brittle old habit: a wording fix could silently turn a config error into an auth error.
 

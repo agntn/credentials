@@ -12,6 +12,7 @@ import { list as listAzureDevOps } from "./azure-devops.ts";
 import { list as listBitbucket } from "./bitbucket.ts";
 import { list as listCloudflare } from "./cloudflare.ts";
 import type { CredentialInfo, Service } from "./core/types.ts";
+import { list as listCursorOrigin } from "./cursor-origin.ts";
 import { list as listGitea } from "./gitea.ts";
 import { list as listGitee } from "./gitee.ts";
 import { list as listGithub } from "./github.ts";
@@ -52,6 +53,7 @@ const LISTERS: Record<
   bitbucket: listBitbucket,
   "azure-devops": listAzureDevOps,
   pushin: listPushin,
+  "cursor-origin": listCursorOrigin,
   cloudflare: listCloudflare,
 };
 
@@ -65,6 +67,7 @@ const SETUP: Record<Service, string> = {
   bitbucket: "set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL",
   "azure-devops": "set AZURE_DEVOPS_EXT_PAT",
   pushin: "set PUSHIN_TOKEN or run pun login",
+  "cursor-origin": "set CURSOR_AUTH_TOKEN or run origin auth login",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };
 

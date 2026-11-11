@@ -1,7 +1,8 @@
 /**
- * Every in-process test starts on an empty machine: no token variables, no gh, glab or
- * cf on PATH, and empty config dirs. Set directly, not through `vi.stubEnv`, so a test's
- * `vi.unstubAllEnvs()` comes back here instead of to the developer's real environment.
+ * Every in-process test starts on an empty machine: no token variables, no gh, glab, origin
+ * or cf on PATH, and empty config dirs, `~/.config/origin-cli` included. Set directly, not
+ * through `vi.stubEnv`, so a test's `vi.unstubAllEnvs()` comes back here instead of to the
+ * developer's real environment.
  */
 
 import { mkdtempSync } from "node:fs";
@@ -33,6 +34,9 @@ for (const key of [
   "PUSHIN_TOKEN",
   "PUSHIN_URL",
   "PUN_CONFIG_DIR",
+  "CURSOR_AUTH_TOKEN",
+  "CURSOR_API_KEY",
+  "CURSOR_ORIGIN_ENDPOINT",
   "CLOUDFLARE_API_TOKEN",
   "AGNTN_CLOUDFLARE_ACCOUNT_ID",
   "CLOUDFLARE_ACCOUNT_ID",
@@ -40,5 +44,6 @@ for (const key of [
   delete process.env[key];
 }
 process.env.PATH = home;
+process.env.HOME = home;
 process.env.XDG_CONFIG_HOME = home;
 process.env.AZURE_CONFIG_DIR = home;

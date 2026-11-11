@@ -10,6 +10,7 @@ export default defineBuildConfig({
         "./src/azure-devops.ts",
         "./src/bitbucket.ts",
         "./src/cloudflare.ts",
+        "./src/cursor-origin.ts",
         "./src/gitea.ts",
         "./src/gitee.ts",
         "./src/github.ts",

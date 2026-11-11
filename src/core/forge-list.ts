@@ -34,6 +34,7 @@ import {
 } from "./azure-devops.ts";
 import { compact, epoch, isRecord, nonEmptyString } from "./fields.ts";
 import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutToken } from "./hut.ts";
+import { ORIGIN_API, ORIGIN_HOST, originApiBase, originLogin } from "./origin.ts";
 import { httpOrigin, PUSHIN_ORIGIN, punLoginFor, punLogins } from "./pun.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
 import { field, type Probe, type ProbeRequest, probe } from "./verify.ts";
@@ -164,6 +165,7 @@ function envVerifyUrl(forge: Forge, host: string | undefined): string | undefine
   if (host === undefined || forge === "sourcehut") return undefined;
   if (forge === "azure-devops") return `${host}/_apis/connectionData`;
   if (forge === "pushin") return `${pushinUrl().replace(/\/+$/, "")}/api/v1/user`;
+  if (forge === "cursor-origin") return `${originApiBase()}/rate_limit`;
   return forge === "gitee" ? `${giteeApiBase()}/user` : userEndpoint(forge, `https://${host}`);
 }
 
@@ -186,7 +188,8 @@ function giteeApiBase(): string {
 /**
  * The host a forge's own CLI sends its token variable to. Gitea and Sourcehut have no such
  * CLI convention, so `GITEA_TOKEN` and `SRHT_TOKEN` have no host to be checked against.
- * Gitee's is the host of `GITEE_API_BASE`, and Pushin's of `PUSHIN_URL`, when it has one.
+ * Gitee's is the host of `GITEE_API_BASE`, Pushin's of `PUSHIN_URL` and Cursor Origin's
+ * of `CURSOR_ORIGIN_ENDPOINT`, when it has one.
  * Azure DevOps' is its default organization.
  * @param forge - The forge.
  * @returns {string | undefined} The host, or undefined when the variable names none.
@@ -207,7 +210,18 @@ const PAIRED_HOSTS: Partial<Record<Forge, () => string | undefined>> = {
   gitee: () => hostnameOfUrl(giteeApiBase()) || undefined,
   "azure-devops": defaultOrganization,
   pushin: pushinHost,
+  "cursor-origin": originHost,
 };
+
+/**
+ * The host behind `CURSOR_ORIGIN_ENDPOINT`, origin.cursor.com for its own API.
+ * @returns {string | undefined} The host, or undefined for an endpoint `origin` won't trust.
+ */
+function originHost(): string | undefined {
+  const base = originApiBase();
+  if (base === undefined) return undefined;
+  return base === ORIGIN_API ? ORIGIN_HOST : new URL(base).host;
+}
 
 /**
  * The host of `PUSHIN_URL`, port included.
@@ -226,6 +240,7 @@ const LOGIN_READERS: Partial<Record<Forge, (envWins: boolean) => Candidate[]>> =
   sourcehut: hutLogins,
   "azure-devops": azureDevOpsLogins,
   pushin: punLoginCandidates,
+  "cursor-origin": originLoginCandidates,
 };
 
 /**
@@ -416,6 +431,62 @@ function punLoginCandidates(envWins: boolean): Candidate[] {
   );
 }
 
+/**
+ * What `origin auth token` falls back on: CURSOR_API_KEY, then the saved login.
+ * @param envWins - Whether CURSOR_AUTH_TOKEN wins over both.
+ * @returns {Candidate[]} The key first, then the login.
+ */
+function originLoginCandidates(envWins: boolean): Candidate[] {
+  const keySet = Boolean(process.env.CURSOR_API_KEY);
+  const login = originLogin();
+  const candidates: Candidate[] = [];
+  if (keySet) candidates.push(originKeyCandidate(envWins));
+  if (login === undefined) return candidates;
+  const saved = loginCandidate({
+    forge: "cursor-origin",
+    host: ORIGIN_HOST,
+    active: !envWins && !keySet,
+    found: "config",
+    origin: "origin credentials.json",
+    token: login.token,
+    verifyUrl: `${ORIGIN_API}/rate_limit`,
+    expiresAt: login.expiresAt,
+  });
+  return [...candidates, withRefreshNote(saved)];
+}
+
+/**
+ * Describe CURSOR_API_KEY, which `origin` trades for a token and never sends itself.
+ * @param envWins - Whether CURSOR_AUTH_TOKEN wins over it.
+ * @returns {Candidate} An entry with no token, so it is never checked.
+ */
+function originKeyCandidate(envWins: boolean): Candidate {
+  return {
+    info: {
+      service: "cursor-origin",
+      host: ORIGIN_HOST,
+      source: "cli",
+      origin: "CURSOR_API_KEY",
+      active: !envWins,
+      state: "unchecked",
+      note: "origin auth token trades this key for a short-lived token, so the key itself is never sent anywhere to check",
+    },
+    token: undefined,
+    verifyUrl: undefined,
+  };
+}
+
+/**
+ * Say that an expired saved token is not a dead login: `origin` refreshes it.
+ * @param candidate - The saved login.
+ * @returns {Candidate} The same entry, with a note once its token has expired.
+ */
+function withRefreshNote(candidate: Candidate): Candidate {
+  if (candidate.info.state !== "expired") return candidate;
+  const note = "the saved access token has expired, and the next origin command refreshes it";
+  return { ...candidate, info: { ...candidate.info, note } };
+}
+
 interface LoginFacts {
   readonly forge: Forge;
   readonly host: string;
@@ -465,7 +536,7 @@ function loginCandidate(facts: LoginFacts): Candidate {
  * @returns {string} The `/user` endpoint.
  */
 function userEndpoint(
-  forge: Exclude<Forge, "sourcehut" | "gitee" | "azure-devops" | "pushin">,
+  forge: Exclude<Forge, "sourcehut" | "gitee" | "azure-devops" | "pushin" | "cursor-origin">,
   origin: string,
 ): string {
   const base = origin.replace(/\/+$/, "");
@@ -487,6 +558,9 @@ const SOURCEHUT_ME = JSON.stringify({ query: "{ me { canonicalName } }" });
 
 /** Bitbucket answers a missing scope with 403, not a bad token. */
 const BITBUCKET_REFUSALS = [401];
+
+/** Origin's 403 can be a team's IP allowlist turning the machine away, not the token. */
+const ORIGIN_REFUSALS = [401];
 
 /**
  * Build the request that shows a forge one token.
@@ -511,6 +585,8 @@ function probeRequest(
       return { authorization: `token ${token}` };
     case "sourcehut":
       return { authorization: `Bearer ${token}`, refusals: SOURCEHUT_REFUSALS, body: SOURCEHUT_ME };
+    case "cursor-origin":
+      return { authorization: `Bearer ${token}`, refusals: ORIGIN_REFUSALS };
     default:
       return { authorization: `Bearer ${token}` };
   }
@@ -531,12 +607,13 @@ function basicAuth(username: string, token: string | undefined): string {
  * @param forge - The forge.
  * @param candidate - The entry, its token and endpoint.
  * @returns {Promise<CredentialInfo>} The entry with its state, and the account and scopes the forge reported.
+ * A field the answer leaves out keeps the CLI's value.
  */
 async function verifyCandidate(forge: Forge, candidate: Candidate): Promise<CredentialInfo> {
   const { info, token, verifyUrl } = candidate;
   if (token === undefined || verifyUrl === undefined || info.state === "expired") return info;
   const answer = await probe(verifyUrl, probeRequest(forge, candidate));
-  return compact({ ...info, ...answerFacts(forge, answer) });
+  return compact({ ...info, ...compact(answerFacts(forge, answer)) });
 }
 
 /**
