@@ -8,6 +8,7 @@
  */
 
 import { sanitizeLine, ToolInputError } from "@agntn/tools";
+import { list as listBitbucket } from "./bitbucket.ts";
 import { list as listCloudflare } from "./cloudflare.ts";
 import type { CredentialInfo, Service } from "./core/types.ts";
 import { list as listGitea } from "./gitea.ts";
@@ -46,6 +47,7 @@ const LISTERS: Record<
   gitea: listGitea,
   gitee: listGitee,
   sourcehut: listSourcehut,
+  bitbucket: listBitbucket,
   cloudflare: listCloudflare,
 };
 
@@ -56,6 +58,7 @@ const SETUP: Record<Service, string> = {
   gitea: "set GITEA_TOKEN or run tea login add",
   gitee: "set GITEE_TOKEN or GITEE_ACCESS_TOKEN",
   sourcehut: "set SRHT_TOKEN or run hut init",
+  bitbucket: "set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };
 

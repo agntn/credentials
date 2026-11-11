@@ -8,7 +8,8 @@
  *   4. The CLI's config file, for a machine with the config but not the CLI (tea and hut
  *      print no token, so for Gitea and Sourcehut the file is the only step)
  *
- * Gitee has neither a CLI nor a config file, so its chain stops at the environment.
+ * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
+ * Bitbucket, which has no official CLI at all.
  */
 
 import { execFileSync } from "node:child_process";
@@ -18,12 +19,14 @@ import { join } from "node:path";
 import { hutInstanceFor, hutInstances, hutToken } from "./hut.ts";
 import type { CredentialSource } from "./types.ts";
 
-export type Forge = "github" | "gitlab" | "gitea" | "gitee" | "sourcehut";
+export type Forge = "github" | "gitlab" | "gitea" | "gitee" | "sourcehut" | "bitbucket";
 
 /** A forge token and the step of the chain that found it. */
 export interface ForgeCredential {
   readonly token: string;
   readonly source: CredentialSource;
+  /** Basic auth login sent with the token, when the forge wants one. */
+  readonly username?: string;
 }
 
 export interface ForgeOptions {
@@ -36,6 +39,8 @@ export interface ForgeOptions {
    * so on every other forge a named account finds nothing past the environment.
    */
   readonly account?: string;
+  /** Basic auth login for an explicit `token`, like a Bitbucket API token's email. */
+  readonly username?: string;
 }
 
 export const DEFAULT_HOSTS: Record<Forge, string> = {
@@ -44,6 +49,7 @@ export const DEFAULT_HOSTS: Record<Forge, string> = {
   gitea: "gitea.com",
   gitee: "gitee.com",
   sourcehut: "sr.ht",
+  bitbucket: "bitbucket.org",
 };
 
 export const ENV_KEYS: Record<Forge, readonly string[]> = {
@@ -53,6 +59,13 @@ export const ENV_KEYS: Record<Forge, readonly string[]> = {
   /** `GITEE_ACCESS_TOKEN` is the one Gitee's own MCP server reads. */
   gitee: ["GITEE_TOKEN", "GITEE_ACCESS_TOKEN"],
   sourcehut: ["SRHT_TOKEN"],
+  /** Access tokens go out as a bearer, API tokens need their email. */
+  bitbucket: ["BITBUCKET_TOKEN", "BITBUCKET_API_TOKEN"],
+};
+
+/** Token variables that only work with a login beside them. */
+export const ENV_USERNAMES: Readonly<Record<string, string>> = {
+  BITBUCKET_API_TOKEN: "BITBUCKET_EMAIL",
 };
 
 const CLI_TIMEOUT_MS = 5000;
@@ -65,11 +78,14 @@ const CLI_TIMEOUT_MS = 5000;
  */
 export function resolveForge(forge: Forge, options?: ForgeOptions): ForgeCredential | null {
   if (options?.token !== undefined) {
-    return { token: options.token, source: "explicit" };
+    const { token, username } = options;
+    return username === undefined
+      ? { token, source: "explicit" }
+      : { token, source: "explicit", username };
   }
 
-  const envToken = fromEnv(forge);
-  if (envToken !== undefined) return { token: envToken, source: "env" };
+  const fromVariables = fromEnv(forge);
+  if (fromVariables !== undefined) return fromVariables;
 
   const account = options?.account;
   if (account !== undefined && forge !== "github") return null;
@@ -78,16 +94,31 @@ export function resolveForge(forge: Forge, options?: ForgeOptions): ForgeCredent
 }
 
 /**
- * Read the first set token variable. An empty one still ends the chain: `GH_TOKEN=` asks for anonymous access.
+ * Read the first usable token variable. An empty one still ends the chain: `GH_TOKEN=` asks
+ * for anonymous access.
  * @param forge - The forge whose variables to read.
- * @returns {string | undefined} The value, possibly empty, or undefined when none is set.
+ * @returns {ForgeCredential | undefined} The token, possibly empty, with any login.
  */
-function fromEnv(forge: Forge): string | undefined {
+function fromEnv(forge: Forge): ForgeCredential | undefined {
   for (const key of ENV_KEYS[forge]) {
-    const value = process.env[key];
-    if (value !== undefined) return value;
+    const credential = envCredential(key);
+    if (credential !== undefined) return credential;
   }
   return undefined;
+}
+
+/**
+ * Read one token variable, and its login variable when it has one.
+ * @param key - The token variable.
+ * @returns {ForgeCredential | undefined} The token, or undefined when unset or missing its login.
+ */
+export function envCredential(key: string): ForgeCredential | undefined {
+  const token = process.env[key];
+  if (token === undefined) return undefined;
+  const usernameKey = ENV_USERNAMES[key];
+  if (usernameKey === undefined || token === "") return { token, source: "env" };
+  const username = process.env[usernameKey];
+  return username ? { token, source: "env", username } : undefined;
 }
 
 /**
@@ -123,6 +154,7 @@ function fromCli(forge: Forge, hostname: string, account?: string): string | nul
     case "gitea":
     case "gitee":
     case "sourcehut":
+    case "bitbucket":
       return null;
   }
 }
@@ -184,6 +216,7 @@ function fromConfig(forge: Forge, hostname: string, account?: string): string | 
       case "gitea":
         return readTeaConfig(hostname);
       case "gitee":
+      case "bitbucket":
         return null;
       case "sourcehut":
         return readHutConfig(hostname);

@@ -34,7 +34,9 @@ describe("credentials MCP server", () => {
     expect(response.tools[0]?.inputSchema).toMatchObject({
       type: "object",
       properties: {
-        service: { enum: ["github", "gitlab", "gitea", "gitee", "sourcehut", "cloudflare"] },
+        service: {
+          enum: ["github", "gitlab", "gitea", "gitee", "sourcehut", "bitbucket", "cloudflare"],
+        },
         verify: { type: "boolean" },
       },
       additionalProperties: false,
@@ -72,6 +74,7 @@ describe("credentials MCP server", () => {
         "gitea: nothing found (set GITEA_TOKEN or run tea login add)",
         "gitee: nothing found (set GITEE_TOKEN or GITEE_ACCESS_TOKEN)",
         "sourcehut: nothing found (set SRHT_TOKEN or run hut init)",
+        "bitbucket: nothing found (set BITBUCKET_TOKEN, or BITBUCKET_API_TOKEN with BITBUCKET_EMAIL)",
         "cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)",
         "Unchecked entries are only known to exist. Run again with verify (--verify in the CLI) to ask each service.",
       ].join("\n"),
@@ -88,14 +91,14 @@ describe("credentials MCP server", () => {
     });
     const outside = await client.callTool({
       name: "credentials_list",
-      arguments: { service: "bitbucket" },
+      arguments: { service: "launchpad" },
     });
 
     expect(unknown.isError).toBe(true);
     expect(text(unknown)).toContain('unknown property "servic"');
     expect(outside.isError).toBe(true);
     expect(text(outside)).toContain(
-      "must be one of github, gitlab, gitea, gitee, sourcehut, cloudflare",
+      "must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, cloudflare",
     );
   });
 });

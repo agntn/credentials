@@ -5,6 +5,7 @@
  * can see what is there, which one wins and, with `verify`, which ones still work.
  */
 
+import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -12,8 +13,11 @@ import {
   configDir,
   DEFAULT_HOSTS,
   ENV_KEYS,
+  ENV_USERNAMES,
+  envCredential,
   extractYamlField,
   type Forge,
+  type ForgeCredential,
   getYamlMappingSection,
   ghConfigDir,
   hostnameOfUrl,
@@ -30,6 +34,8 @@ import { field, type Probe, type ProbeRequest, probe } from "./verify.ts";
 interface Candidate {
   readonly info: CredentialInfo;
   readonly token: string | undefined;
+  /** The login that goes out with the token as basic auth. */
+  readonly username?: string;
   /** The endpoint on the credential's own host that answers with the token's user. */
   readonly verifyUrl: string | undefined;
 }
@@ -50,7 +56,7 @@ export async function listForge(forge: Forge, options?: ListOptions): Promise<Cr
 }
 
 /**
- * Every set token variable. The first one wins in `resolve`, for any host.
+ * Every set token variable. The first usable one wins in `resolve`, for any host.
  * @param forge - The forge whose variables to read.
  * @returns {Candidate[]} One entry per set variable, in lookup order.
  */
@@ -58,26 +64,85 @@ function envCandidates(forge: Forge): Candidate[] {
   const host = envHost(forge);
   const candidates: Candidate[] = [];
   for (const key of ENV_KEYS[forge]) {
-    const token = process.env[key];
-    if (token === undefined) continue;
-    const anonymous = token === "";
-    candidates.push({
-      info: {
-        service: forge,
-        host: host ?? "any",
-        source: "env",
-        origin: key,
-        active: candidates.length === 0,
-        state: anonymous ? "anonymous" : "unchecked",
-        ...(host === undefined && !anonymous
-          ? { note: `${key} names no host, so it is never sent anywhere to check` }
-          : {}),
-      },
-      token: anonymous ? undefined : token,
-      verifyUrl: envVerifyUrl(forge, host),
-    });
+    if (process.env[key] === undefined) continue;
+    const taken = candidates.some(({ info }) => info.active);
+    candidates.push(envCandidate({ forge, key, host, taken }));
   }
   return candidates;
+}
+
+/** Bitbucket's `/2.0/user` answers access tokens with 401 whether they work or not. */
+const UNVERIFIABLE: Readonly<Record<string, string>> = {
+  BITBUCKET_TOKEN:
+    "Bitbucket's /user endpoint refuses access tokens, so BITBUCKET_TOKEN is never sent anywhere to check",
+};
+
+interface EnvFacts {
+  readonly forge: Forge;
+  readonly key: string;
+  readonly host: string | undefined;
+  /** Whether an earlier variable already wins. */
+  readonly taken: boolean;
+}
+
+/**
+ * Build the entry for one set token variable.
+ * @param facts - The variable, its forge and host, and whether an earlier one wins.
+ * @returns {Candidate} The entry; a token missing its login is listed but never active.
+ */
+function envCandidate(facts: EnvFacts): Candidate {
+  const credential = envCredential(facts.key);
+  if (credential?.token === "") {
+    return {
+      info: { ...envInfo(facts, true), state: "anonymous" },
+      token: undefined,
+      verifyUrl: undefined,
+    };
+  }
+  const verifiable = UNVERIFIABLE[facts.key] === undefined;
+  return {
+    info: compact<CredentialInfo>({
+      ...envInfo(facts, credential !== undefined),
+      state: "unchecked",
+      account: credential?.username,
+      note: envNote(facts, credential),
+    }),
+    token: credential?.token,
+    username: credential?.username,
+    verifyUrl: verifiable ? envVerifyUrl(facts.forge, facts.host) : undefined,
+  };
+}
+
+/**
+ * The fields every entry for a token variable shares.
+ * @param facts - The variable, its forge and host, and whether an earlier one wins.
+ * @param usable - Whether `resolve` can use the variable at all.
+ * @returns {Omit<CredentialInfo, "state">} The entry without its state.
+ */
+function envInfo(facts: EnvFacts, usable: boolean): Omit<CredentialInfo, "state"> {
+  return {
+    service: facts.forge,
+    host: facts.host ?? "any",
+    source: "env",
+    origin: facts.key,
+    active: !facts.taken && usable,
+  };
+}
+
+/**
+ * Say why a set variable is never checked or never used.
+ * @param facts - The variable and the host it goes to, if it names one.
+ * @param credential - What `resolve` reads from it, or undefined when its login is missing.
+ * @returns {string | undefined} The note, or undefined when there is nothing to explain.
+ */
+function envNote(facts: EnvFacts, credential: ForgeCredential | undefined): string | undefined {
+  const { key } = facts;
+  if (credential === undefined) {
+    return `${key} goes out with ${ENV_USERNAMES[key]}, which isn't set, so resolve skips it`;
+  }
+  if (facts.host === undefined)
+    return `${key} names no host, so it is never sent anywhere to check`;
+  return UNVERIFIABLE[key];
 }
 
 /**
@@ -132,6 +197,7 @@ function loginCandidates(forge: Forge, envWins: boolean): Candidate[] {
       case "gitea":
         return teaLogins(envWins);
       case "gitee":
+      case "bitbucket":
         return [];
       case "sourcehut":
         return hutLogins(envWins);
@@ -322,6 +388,8 @@ function userEndpoint(forge: Exclude<Forge, "sourcehut" | "gitee">, origin: stri
       return `${base}/api/v4/user`;
     case "gitea":
       return `${base}/api/v1/user`;
+    case "bitbucket":
+      return "https://api.bitbucket.org/2.0/user";
   }
 }
 
@@ -329,13 +397,24 @@ function userEndpoint(forge: Exclude<Forge, "sourcehut" | "gitee">, origin: stri
 const SOURCEHUT_REFUSALS = [400, 401, 403];
 const SOURCEHUT_ME = JSON.stringify({ query: "{ me { canonicalName } }" });
 
+/** Bitbucket answers a missing scope with 403, not a bad token. */
+const BITBUCKET_REFUSALS = [401];
+
 /**
  * Build the request that shows a forge one token.
  * @param forge - The forge.
- * @param token - The token.
+ * @param credential - The token, and the login that goes with it as basic auth.
  * @returns {ProbeRequest} The header, and for Sourcehut the GraphQL query and its refusals.
  */
-function probeRequest(forge: Forge, token: string): ProbeRequest {
+function probeRequest(
+  forge: Forge,
+  credential: Pick<Candidate, "token" | "username">,
+): ProbeRequest {
+  const { token, username } = credential;
+  if (username !== undefined) {
+    const basic = Buffer.from(`${username}:${token ?? ""}`).toString("base64");
+    return { authorization: `Basic ${basic}`, refusals: BITBUCKET_REFUSALS };
+  }
   switch (forge) {
     case "gitea":
     case "gitee":
@@ -356,7 +435,7 @@ function probeRequest(forge: Forge, token: string): ProbeRequest {
 async function verifyCandidate(forge: Forge, candidate: Candidate): Promise<CredentialInfo> {
   const { info, token, verifyUrl } = candidate;
   if (token === undefined || verifyUrl === undefined || info.state === "expired") return info;
-  const answer = await probe(verifyUrl, probeRequest(forge, token));
+  const answer = await probe(verifyUrl, probeRequest(forge, candidate));
   return compact({ ...info, ...answerFacts(forge, answer) });
 }
 
@@ -384,8 +463,8 @@ function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
 }
 
 /**
- * Read the user out of a forge's answer: `login` on GitHub and Gitee, `username` on GitLab
- * and Gitea, `data.me.canonicalName` (`~name`) from Sourcehut's GraphQL.
+ * Read the user out of a forge's answer: `login` on GitHub and Gitee, `username` on GitLab,
+ * Gitea and Bitbucket, `data.me.canonicalName` (`~name`) from Sourcehut's GraphQL.
  * @param forge - The forge that answered.
  * @param body - The parsed body.
  * @returns {string | undefined} The user, when the answer names one.
