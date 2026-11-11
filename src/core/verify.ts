@@ -15,25 +15,33 @@ export type Probe =
   | { readonly state: "valid"; readonly headers: Headers; readonly body: unknown }
   | { readonly state: "rejected" | "unreachable"; readonly note: string };
 
+/** What to send, and which answers mean no. */
+export interface ProbeRequest {
+  /** The full `Authorization` header value. */
+  readonly authorization: string;
+  /** Statuses that mean the service refused the token. Defaults to 401 and 403. */
+  readonly refusals?: readonly number[];
+  /** A JSON body, which turns the GET into a POST, for a GraphQL endpoint. */
+  readonly body?: string;
+}
+
 /**
- * Send one authenticated GET and classify the answer.
+ * Send one authenticated request and classify the answer.
  * @param url - Endpoint on the credential's own host.
- * @param authorization - The full `Authorization` header value.
- * @param refusals - Statuses that mean the service refused the token.
+ * @param request - The header, the refusal statuses and an optional body.
  * @returns {Promise<Probe>} The state, plus the response parts a caller may read.
  */
-export async function probe(
-  url: string,
-  authorization: string,
-  refusals: readonly number[] = [401, 403],
-): Promise<Probe> {
+export async function probe(url: string, request: ProbeRequest): Promise<Probe> {
+  const { authorization, refusals = [401, 403], body: query } = request;
   let response: Response;
   try {
     response = await fetch(url, {
+      ...(query === undefined ? {} : { method: "POST", body: query }),
       headers: {
         Authorization: authorization,
         Accept: "application/json",
         "User-Agent": "@agntn/credentials",
+        ...(query === undefined ? {} : { "Content-Type": "application/json" }),
       },
       redirect: "error",
       signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),

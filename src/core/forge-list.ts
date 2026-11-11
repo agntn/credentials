@@ -17,12 +17,14 @@ import {
   getYamlMappingSection,
   ghConfigDir,
   hostnameOfUrl,
+  hutConfigFile,
   parseYamlListEntries,
   runCli,
 } from "./forge.ts";
-import { compact, epoch } from "./fields.ts";
+import { compact, epoch, isRecord, nonEmptyString } from "./fields.ts";
+import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutToken } from "./hut.ts";
 import type { CredentialInfo, CredentialSource, ListOptions } from "./types.ts";
-import { field, type Probe, probe } from "./verify.ts";
+import { field, type Probe, type ProbeRequest, probe } from "./verify.ts";
 
 /** A credential with the token `list` needs to verify it. Never leaves this module. */
 interface Candidate {
@@ -72,20 +74,32 @@ function envCandidates(forge: Forge): Candidate[] {
           : {}),
       },
       token: anonymous ? undefined : token,
-      verifyUrl: host === undefined ? undefined : userEndpoint(forge, `https://${host}`),
+      verifyUrl: envVerifyUrl(forge, host),
     });
   }
   return candidates;
 }
 
 /**
- * The host a forge's own CLI sends its token variable to. Gitea has no such CLI convention,
- * so `GITEA_TOKEN` has no host to be checked against.
+ * The endpoint that checks a token variable, on the host its CLI sends it to.
  * @param forge - The forge.
- * @returns {string | undefined} The host, or undefined for Gitea.
+ * @param host - That host, if the forge has one.
+ * @returns {string | undefined} The endpoint, or undefined when the variable names no host.
+ */
+function envVerifyUrl(forge: Forge, host: string | undefined): string | undefined {
+  return host === undefined || forge === "sourcehut"
+    ? undefined
+    : userEndpoint(forge, `https://${host}`);
+}
+
+/**
+ * The host a forge's own CLI sends its token variable to. Gitea and Sourcehut have no such
+ * CLI convention, so `GITEA_TOKEN` and `SRHT_TOKEN` have no host to be checked against.
+ * @param forge - The forge.
+ * @returns {string | undefined} The host, or undefined for Gitea and Sourcehut.
  */
 function envHost(forge: Forge): string | undefined {
-  if (forge === "gitea") return undefined;
+  if (forge === "gitea" || forge === "sourcehut") return undefined;
   if (forge === "gitlab") {
     const configured = process.env.GITLAB_HOST;
     if (configured) return hostnameOfUrl(configured) ?? configured;
@@ -108,6 +122,8 @@ function loginCandidates(forge: Forge, envWins: boolean): Candidate[] {
         return glabLogins(envWins);
       case "gitea":
         return teaLogins(envWins);
+      case "sourcehut":
+        return hutLogins(envWins);
     }
   } catch {
     // No config file means no logins.
@@ -219,6 +235,28 @@ function teaLogins(envWins: boolean): Candidate[] {
   });
 }
 
+/**
+ * Instances in hut's `config`, each with its `access-token` or what its
+ * `access-token-cmd` prints. resolve takes the first instance for a host, so only that one is active.
+ * @param envWins - Whether a token variable wins over every login.
+ * @returns {Candidate[]} One entry per instance.
+ */
+function hutLogins(envWins: boolean): Candidate[] {
+  const content = readFileSync(hutConfigFile(), "utf-8");
+  const instances = hutInstances(content);
+  return instances.map((instance) =>
+    loginCandidate({
+      forge: "sourcehut",
+      host: instance.origin,
+      active: !envWins && hutInstanceFor(instances, instance.origin) === instance,
+      found: "config",
+      origin: instance.command === undefined ? "hut config" : "hut access-token-cmd",
+      token: hutToken(instance),
+      verifyUrl: hutMetaQueryUrl(instance),
+    }),
+  );
+}
+
 interface LoginFacts {
   readonly forge: Forge;
   readonly host: string;
@@ -258,12 +296,13 @@ function loginCandidate(facts: LoginFacts): Candidate {
 }
 
 /**
- * The endpoint that names the token's user, on the forge's own API.
+ * The endpoint that names the token's user, on the forge's own API. Sourcehut's sits on
+ * meta, which hut can move, so `hutMetaQueryUrl` builds it.
  * @param forge - The forge.
  * @param origin - Scheme and host of the instance, or the full URL tea recorded.
  * @returns {string} The `/user` endpoint.
  */
-function userEndpoint(forge: Forge, origin: string): string {
+function userEndpoint(forge: Exclude<Forge, "sourcehut">, origin: string): string {
   const base = origin.replace(/\/+$/, "");
   switch (forge) {
     case "github":
@@ -272,6 +311,27 @@ function userEndpoint(forge: Forge, origin: string): string {
       return `${base}/api/v4/user`;
     case "gitea":
       return `${base}/api/v1/user`;
+  }
+}
+
+/** meta.sr.ht answers a refused token with 400 and `ERR_UNAUTHORIZED`, not 401. */
+const SOURCEHUT_REFUSALS = [400, 401, 403];
+const SOURCEHUT_ME = JSON.stringify({ query: "{ me { canonicalName } }" });
+
+/**
+ * Build the request that shows a forge one token.
+ * @param forge - The forge.
+ * @param token - The token.
+ * @returns {ProbeRequest} The header, and for Sourcehut the GraphQL query and its refusals.
+ */
+function probeRequest(forge: Forge, token: string): ProbeRequest {
+  switch (forge) {
+    case "gitea":
+      return { authorization: `token ${token}` };
+    case "sourcehut":
+      return { authorization: `Bearer ${token}`, refusals: SOURCEHUT_REFUSALS, body: SOURCEHUT_ME };
+    default:
+      return { authorization: `Bearer ${token}` };
   }
 }
 
@@ -284,7 +344,7 @@ function userEndpoint(forge: Forge, origin: string): string {
 async function verifyCandidate(forge: Forge, candidate: Candidate): Promise<CredentialInfo> {
   const { info, token, verifyUrl } = candidate;
   if (token === undefined || verifyUrl === undefined || info.state === "expired") return info;
-  const answer = await probe(verifyUrl, forge === "gitea" ? `token ${token}` : `Bearer ${token}`);
+  const answer = await probe(verifyUrl, probeRequest(forge, token));
   return compact({ ...info, ...answerFacts(forge, answer) });
 }
 
@@ -299,8 +359,7 @@ function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
   const scopes = answer.headers.get("x-oauth-scopes") ?? "";
   return {
     state: "valid",
-    account:
-      field(answer.body, forge === "github" ? "login" : "username") ?? field(answer.body, "login"),
+    account: accountOf(forge, answer.body),
     scopes:
       scopes === ""
         ? undefined
@@ -310,4 +369,20 @@ function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
             .filter(Boolean),
     expiresAt: epoch(answer.headers.get("github-authentication-token-expiration")),
   };
+}
+
+/**
+ * Read the user out of a forge's answer: `login` on GitHub, `username` on GitLab and
+ * Gitea, `data.me.canonicalName` (`~name`) from Sourcehut's GraphQL.
+ * @param forge - The forge that answered.
+ * @param body - The parsed body.
+ * @returns {string | undefined} The user, when the answer names one.
+ */
+function accountOf(forge: Forge, body: unknown): string | undefined {
+  if (forge === "sourcehut") {
+    const data = isRecord(body) ? body.data : undefined;
+    const me = isRecord(data) ? data.me : undefined;
+    return isRecord(me) ? nonEmptyString(me.canonicalName) : undefined;
+  }
+  return field(body, forge === "github" ? "login" : "username") ?? field(body, "login");
 }

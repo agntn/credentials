@@ -334,13 +334,13 @@ async function envEntry(
     note: account === undefined ? "no account id is set, so resolve refuses this token" : undefined,
   });
   if (!verify) return base;
-  let answer = await probe(`${API_BASE}/user/tokens/verify`, `Bearer ${token}`, TOKEN_REFUSALS);
+  const request = { authorization: `Bearer ${token}`, refusals: TOKEN_REFUSALS };
+  let answer = await probe(`${API_BASE}/user/tokens/verify`, request);
   // An account-owned token is unknown to the user endpoint.
   if (answer.state === "rejected" && account !== undefined) {
     answer = await probe(
       `${API_BASE}/accounts/${encodeURIComponent(account.id)}/tokens/verify`,
-      `Bearer ${token}`,
-      TOKEN_REFUSALS,
+      request,
     );
   }
   return compact({ ...base, ...tokenFacts(answer) });

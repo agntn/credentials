@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { list as gitea } from "../src/gitea.ts";
 import { list as github, resolve as resolveGithub } from "../src/github.ts";
 import { list as gitlab } from "../src/gitlab.ts";
+import { list as sourcehut } from "../src/sourcehut.ts";
 import { listCredentials } from "../src/tool-operations.ts";
 
 interface Sent {
@@ -326,6 +327,103 @@ describe("gitea.list active login", () => {
   });
 });
 
+describe("sourcehut.list", () => {
+  it("never sends SRHT_TOKEN, which names no host", async () => {
+    vi.stubEnv("SRHT_TOKEN", "srht-env");
+    stubFetch({});
+
+    expect(await sourcehut({ verify: true })).toMatchObject([
+      {
+        host: "any",
+        origin: "SRHT_TOKEN",
+        state: "unchecked",
+        note: "SRHT_TOKEN names no host, so it is never sent anywhere to check",
+      },
+    ]);
+    expect(sent).toEqual([]);
+  });
+
+  it("asks meta.sr.ht who a hut token belongs to, with a GraphQL POST", async () => {
+    writeConfig("hut/config", 'instance "sr.ht" {\n  origin "sr.ht"\n  access-token "hut"\n}\n');
+    stubFetch({ hut: () => json({ data: { me: { canonicalName: "~me" } } }) });
+
+    expect(await sourcehut({ verify: true })).toMatchObject([
+      { host: "sr.ht", origin: "hut config", active: true, state: "valid", account: "~me" },
+    ]);
+    expect(sent).toEqual([
+      { url: "https://meta.sr.ht/query", authorization: "Bearer hut", redirect: "error" },
+    ]);
+    const init = vi.mocked(fetch).mock.calls[0]?.[1];
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({ query: "{ me { canonicalName } }" }));
+  });
+
+  it("calls a token meta.sr.ht answers with 400 rejected, as it does for a bad one", async () => {
+    writeConfig(
+      "hut/config",
+      'instance "sr.ht" {\n  origin "sr.ht"\n  access-token "srht-dead"\n}\n',
+    );
+    const refusal = {
+      message: "Invalid OAuth bearer token",
+      extensions: { code: "ERR_UNAUTHORIZED" },
+    };
+    stubFetch({ "srht-dead": () => json({ errors: [refusal] }, { status: 400 }) });
+
+    expect(await sourcehut({ verify: true })).toMatchObject([
+      { state: "rejected", note: "HTTP 400" },
+    ]);
+  });
+
+  it("lists each hut instance, checked on its own meta, the first per host active", async () => {
+    writeConfig(
+      "hut/config",
+      [
+        'instance "sr.ht" {',
+        '  origin "sr.ht"',
+        '  access-token "hut-public"',
+        "}",
+        'instance "corp" {',
+        '  origin "srht.corp.example"',
+        `  access-token-cmd "${process.execPath}" -p '"hut-corp"'`,
+        "  meta {",
+        '    origin "https://accounts.corp.example:8443/"',
+        "  }",
+        "}",
+        'instance "sr.ht-again" {',
+        '  origin "sr.ht"',
+        '  access-token "hut-second"',
+        "}",
+      ].join("\n"),
+    );
+    stubFetch({
+      "hut-public": () => json({ data: { me: { canonicalName: "~pub" } } }),
+      "hut-corp": () => json({ data: { me: { canonicalName: "~corp" } } }),
+      "hut-second": () => json({ data: { me: { canonicalName: "~second" } } }),
+    });
+
+    expect(await sourcehut({ verify: true })).toMatchObject([
+      { host: "sr.ht", origin: "hut config", active: true, account: "~pub" },
+      { host: "srht.corp.example", origin: "hut access-token-cmd", active: true, account: "~corp" },
+      { host: "sr.ht", origin: "hut config", active: false, account: "~second" },
+    ]);
+    expect(sent.map((request) => request.url)).toEqual([
+      "https://meta.sr.ht/query",
+      "https://accounts.corp.example:8443/query",
+      "https://meta.sr.ht/query",
+    ]);
+  });
+
+  it("lets SRHT_TOKEN win over every hut instance", async () => {
+    vi.stubEnv("SRHT_TOKEN", "srht-env");
+    writeConfig("hut/config", 'instance "sr.ht" {\n  origin "sr.ht"\n  access-token "hut"\n}\n');
+
+    expect((await sourcehut()).map((entry) => [entry.origin, entry.active])).toEqual([
+      ["SRHT_TOKEN", true],
+      ["hut config", false],
+    ]);
+  });
+});
+
 describe("listCredentials", () => {
   it("keeps every token out of the text and the details", async () => {
     vi.stubEnv("GH_TOKEN", "ghp_never_shown");
@@ -373,9 +471,9 @@ describe("listCredentials", () => {
     );
   });
 
-  it("refuses a service outside the four and a verify that isn't a boolean", async () => {
+  it("refuses an unknown service and a verify that isn't a boolean", async () => {
     await expect(listCredentials({ service: "bit\nbucket" })).rejects.toThrow(
-      'Unknown service "bit bucket": use one of github, gitlab, gitea, cloudflare',
+      'Unknown service "bit bucket": use one of github, gitlab, gitea, sourcehut, cloudflare',
     );
     await expect(listCredentials({ verify: "true" as unknown as boolean })).rejects.toThrow(
       "verify must be true or false",

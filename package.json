@@ -1,7 +1,7 @@
 {
   "name": "@agntn/credentials",
   "version": "0.0.2",
-  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea and Cloudflare.",
+  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Sourcehut and Cloudflare.",
   "keywords": [
     "agents",
     "cloudflare",
@@ -9,6 +9,7 @@
     "gitea",
     "github",
     "gitlab",
+    "sourcehut",
     "token"
   ],
   "homepage": "https://github.com/agntn/credentials#readme",
@@ -59,6 +60,10 @@
     "./mcp": {
       "types": "./dist/mcp.d.mts",
       "import": "./dist/mcp.mjs"
+    },
+    "./sourcehut": {
+      "types": "./dist/sourcehut.d.mts",
+      "import": "./dist/sourcehut.mjs"
     }
   },
   "publishConfig": {

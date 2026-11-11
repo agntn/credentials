@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Four services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Five services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -14,7 +14,7 @@ Every package that talks to GitHub or Cloudflare ends up with its own token hunt
 ## ✨ Features
 
 - 🔗 **One chain, every service.** Explicit value, then env, then the CLI, then its config file.
-- 🐙 **GitHub, GitLab, Gitea.** `gh`, `glab` and `tea` logins work as they are.
+- 🐙 **GitHub, GitLab, Gitea, Sourcehut.** `gh`, `glab`, `tea` and `hut` logins work as they are.
 - 👥 **Pick a GitHub account.** Got two `gh` logins? Name one. The active login stays put.
 - 🏠 **Self-hosted hosts.** Pass a `baseURL` and the CLI login for that host is used.
 - ☁️ **Cloudflare without an API token.** The `cf` OAuth session is enough. It's read again once it expires.
@@ -42,6 +42,7 @@ github
 gitlab: nothing found (set GITLAB_TOKEN or run glab auth login)
 gitea
   * any | unknown account | GITEA_TOKEN (env) | unchecked | GITEA_TOKEN names no host, so it is never sent anywhere to check
+sourcehut: nothing found (set SRHT_TOKEN or run hut init)
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
 
@@ -86,9 +87,12 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/github`     | `GH_TOKEN`, `GITHUB_TOKEN`               | `gh auth token`, `gh/hosts.yml`                |
 | `@agntn/credentials/gitlab`     | `GITLAB_TOKEN`, `GL_TOKEN`, `GITLAB_PAT` | `glab config get token`, `glab-cli/config.yml` |
 | `@agntn/credentials/gitea`      | `GITEA_TOKEN`                            | `tea/config.yml`                               |
+| `@agntn/credentials/sourcehut`  | `SRHT_TOKEN`                             | `hut/config`                                   |
 | `@agntn/credentials/cloudflare` | `CLOUDFLARE_API_TOKEN`                   | `cf auth whoami` OAuth session                 |
 
 The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
+
+Sourcehut reads `access-token` or `access-token-cmd` from each instance in `hut/config`. The command runs the way hut runs it, and the first word it prints is the token. So `access-token-cmd pass show srht` just works. The token stays in `pass`, where you put it.
 
 Cloudflare throws `CredentialsError` with code `"token"` when there's no usable token, or `"account"` when there's a token but no single account id. Branch on `code`, not the message. The message is for humans, and its wording can change. Matching its text is a brittle old habit: a wording fix could silently turn a config error into an auth error.
 

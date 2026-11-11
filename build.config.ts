@@ -11,6 +11,7 @@ export default defineBuildConfig({
         "./src/gitea.ts",
         "./src/github.ts",
         "./src/gitlab.ts",
+        "./src/sourcehut.ts",
         "./src/cli.ts",
         "./src/ai.ts",
         "./src/mcp.ts",

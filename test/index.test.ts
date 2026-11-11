@@ -6,6 +6,7 @@ import * as cloudflare from "../src/cloudflare.ts";
 import * as gitea from "../src/gitea.ts";
 import * as github from "../src/github.ts";
 import * as gitlab from "../src/gitlab.ts";
+import * as sourcehut from "../src/sourcehut.ts";
 import { SERVICES } from "../src/core/types.ts";
 
 describe("@agntn/credentials", () => {
@@ -18,7 +19,7 @@ describe("@agntn/credentials", () => {
   });
 
   it("gives every service subpath resolve and list", () => {
-    for (const service of [cloudflare, gitea, github, gitlab]) {
+    for (const service of [cloudflare, gitea, github, gitlab, sourcehut]) {
       expect(Object.keys(service).sort()).toEqual(["list", "resolve"]);
     }
   });
