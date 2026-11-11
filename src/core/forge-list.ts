@@ -188,8 +188,7 @@ function giteeApiBase(): string {
 /**
  * The host a forge's own CLI sends its token variable to. Gitea and Sourcehut have no such
  * CLI convention, so `GITEA_TOKEN` and `SRHT_TOKEN` have no host to be checked against.
- * Gitee's is the host of `GITEE_API_BASE`, Pushin's of `PUSHIN_URL` and Cursor Origin's
- * of `CURSOR_ORIGIN_ENDPOINT`, when it has one.
+ * Gitee's is the host of `GITEE_API_BASE`, and Pushin's of `PUSHIN_URL`, when it has one.
  * Azure DevOps' is its default organization.
  * @param forge - The forge.
  * @returns {string | undefined} The host, or undefined when the variable names none.
@@ -607,7 +606,6 @@ function basicAuth(username: string, token: string | undefined): string {
  * @param forge - The forge.
  * @param candidate - The entry, its token and endpoint.
  * @returns {Promise<CredentialInfo>} The entry with its state, and the account and scopes the forge reported.
- * A field the answer leaves out keeps the CLI's value.
  */
 async function verifyCandidate(forge: Forge, candidate: Candidate): Promise<CredentialInfo> {
   const { info, token, verifyUrl } = candidate;

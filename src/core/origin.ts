@@ -1,13 +1,3 @@
-/**
- * `origin`, the Cursor Origin CLI, saves its login for origin.cursor.com in `credentials.json`:
- *
- *   {"accessToken": "<JWT>", "refreshToken": "...", "authMethod": "login", "endpoint": "..."}
- *
- * On macOS it tries the keychain first and keeps this file only as a fallback. The access
- * token lives for minutes, and `origin auth token` refreshes it, so the file alone only
- * helps while that token is fresh.
- */
-
 import { Buffer } from "node:buffer";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";

@@ -11,8 +11,7 @@
  * Gitee has neither a CLI nor a config file, so its chain stops at the environment. So does
  * Bitbucket, which has no official CLI at all. Azure DevOps keeps its login in the keyring,
  * so `azure-devops.ts` reads only the file `az devops login` falls back to on Linux. `pun`
- * prints only its own file, so `pushin.ts` reads that file by instance URL instead. `origin`
- * refreshes its short-lived login on every `origin auth token`, so its file is only a fallback.
+ * prints only its own file, so `pushin.ts` reads that file by instance URL instead.
  */
 
 import { execFileSync } from "node:child_process";

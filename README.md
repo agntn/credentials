@@ -120,16 +120,6 @@ Pushin slots into the same chain as the rest: an explicit token, then `PUSHIN_TO
 
 `resolve()` picks a saved token by the origin of `baseURL`, pushin.eu by default. `PUSHIN_URL` doesn't move that choice, so your company instance's token never lands on pushin.eu. `list({ verify: true })` checks each token as a bearer at `/api/v1/user`, where `pun` sends it: `PUSHIN_URL` for `PUSHIN_TOKEN`, the saved URL for each login.
 
-For Cursor Origin, use `@agntn/credentials/cursor-origin`. The chain starts with your explicit token, then `CURSOR_AUTH_TOKEN`. Next comes `origin auth token`, then the saved login in `origin-cli/credentials.json`. Yes, the CLI is called `origin`, like your git remote.
-
-`origin auth token` trades `CURSOR_API_KEY` for a short-lived token or refreshes the login. The package never sends the key itself. While it's set, the saved login sits out, same as in `origin`.
-
-That saved token goes stale fast. It lasts minutes, and only `origin` can refresh it. On macOS, `origin` uses the keychain first. The file is its fallback. Without the CLI, an expired file token gets skipped. `resolve()` reads the CLI and the file only for origin.cursor.com: no `baseURL`, or one on api.cursor.com or origin.cursor.com. Other hosts get only the variable.
-
-`list({ verify: true })` sends tokens as bearers to `/v1/origin/rate_limit`. It accepts every Origin token and costs zero rate limit points. The `CURSOR_AUTH_TOKEN` check uses `CURSOR_ORIGIN_ENDPOINT`, or api.cursor.com by default. An endpoint `origin` wouldn't trust gets nothing. A 401 means rejection. A 403 might be your team's IP allowlist, not a bad token.
-
-An expired saved token is never sent. It's listed as `expired`, with a note that the next `origin` command refreshes it.
-
 Cloudflare throws `CredentialsError` with code `"token"` when there's no usable token, or `"account"` when there's a token but no single account id. Branch on `code`, not the message. The message is for humans, and its wording can change. Matching its text is a brittle old habit: a wording fix could silently turn a config error into an auth error.
 
 Cloudflare also needs an account. It takes `accountId`, then `AGNTN_CLOUDFLARE_ACCOUNT_ID`, then `CLOUDFLARE_ACCOUNT_ID`. If none is set, the `cf` session's account is used. That only works when it reaches exactly one. Got a 401 back? Call it with `refresh: true`.
