@@ -204,18 +204,17 @@ export function parseScfg(content: string): Directive[] {
  */
 function wordsOf(line: string): string[] {
   if (line.startsWith("#")) return [];
-  return Array.from(line.matchAll(WORD), ([word]) => word.replaceAll(PIECE, unquote));
+  return Array.from(line.matchAll(WORD), ([word]) => unquote(word));
 }
 
 /**
- * Turn one matched piece into its text. A backslash escapes the next character
+ * Turn one word into its text, piece by piece. A backslash escapes the next character
  * everywhere, inside single quotes too, as in go-scfg.
- * @param _piece - The whole match.
- * @param double - The inside of a double-quoted part.
- * @param single - The inside of a single-quoted part.
- * @param bare - An escape or a plain character.
+ * @param word - The word as written.
  * @returns {string} The text.
  */
-function unquote(_piece: string, double?: string, single?: string, bare?: string): string {
-  return (double ?? single ?? bare ?? "").replaceAll(/\\(.)/g, "$1");
+function unquote(word: string): string {
+  return Array.from(word.matchAll(PIECE), ([, double, single, bare]) =>
+    (double ?? single ?? bare ?? "").replaceAll(/\\(.)/g, "$1"),
+  ).join("");
 }
