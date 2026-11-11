@@ -2,7 +2,15 @@
 export type CredentialSource = "explicit" | "env" | "cli" | "config";
 
 /** The services this package finds credentials for, in the order every surface lists them. */
-export const SERVICES = ["github", "gitlab", "gitea", "gitee", "sourcehut", "cloudflare"] as const;
+export const SERVICES = [
+  "github",
+  "gitlab",
+  "gitea",
+  "gitee",
+  "sourcehut",
+  "bitbucket",
+  "cloudflare",
+] as const;
 
 /** A service this package finds credentials for. */
 export type Service = (typeof SERVICES)[number];

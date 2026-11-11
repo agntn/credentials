@@ -51,7 +51,7 @@ describe("omp credentials extension", () => {
 
     expect(tool.parameters).toEqual(wireSchema(listTool));
     expect(await outcome({})).toBe("ran");
-    expect(await outcome({ service: "bitbucket" })).toBe("refused");
+    expect(await outcome({ service: "launchpad" })).toBe("refused");
     expect(await outcome({ verify: 1 })).toBe("refused");
   });
 

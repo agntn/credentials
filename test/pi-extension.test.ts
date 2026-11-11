@@ -36,7 +36,7 @@ describe("pi credentials extension", () => {
     expect(tool.parameters).toEqual(wireSchema(listTool));
     expect(await outcome({})).toBe("ran");
     expect(await outcome({ service: "gitea" })).toBe("ran");
-    expect(await outcome({ service: "bitbucket" })).toBe("refused");
+    expect(await outcome({ service: "launchpad" })).toBe("refused");
     expect(await outcome({ verify: "yes" })).toBe("refused");
     expect(await outcome({ token: "x" })).toBe("refused");
   });

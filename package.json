@@ -1,9 +1,10 @@
 {
   "name": "@agntn/credentials",
   "version": "0.0.2",
-  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut and Cloudflare.",
+  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket and Cloudflare.",
   "keywords": [
     "agents",
+    "bitbucket",
     "cloudflare",
     "credentials",
     "gitea",
@@ -41,6 +42,10 @@
     "./ai": {
       "types": "./dist/ai.d.mts",
       "import": "./dist/ai.mjs"
+    },
+    "./bitbucket": {
+      "types": "./dist/bitbucket.d.mts",
+      "import": "./dist/bitbucket.mjs"
     },
     "./cloudflare": {
       "types": "./dist/cloudflare.d.mts",
