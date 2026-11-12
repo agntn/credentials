@@ -41,7 +41,7 @@ function fromCafe(options: ForgeOptions | undefined): ForgeCredential | null {
  */
 function liveSavedToken(apiUrl: string): string | null {
   const login = cafeLoginFor(apiUrl);
-  const saved = login === undefined ? undefined : cafeSavedToken(login);
+  const saved = login === undefined ? undefined : cafeSavedToken(login, apiUrl);
   if (saved === undefined) return null;
   return saved.expiresAt === undefined || saved.expiresAt > Date.now() ? saved.token : null;
 }

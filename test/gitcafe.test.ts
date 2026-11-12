@@ -28,7 +28,10 @@ function cafeLogin(
   mkdirSync(join(dir, "gitcafe"));
   writeFileSync(join(dir, "gitcafe", "cafe.json"), JSON.stringify({ version: 1, hosts }));
   const credentials = Object.fromEntries(
-    Object.entries(tokens).map(([key, value]) => [`https\0${key}\0\0cafe/api`, value]),
+    Object.entries(tokens).map(([key, value]) => {
+      const [protocol, host] = key.startsWith("http://") ? ["http", key.slice(7)] : ["https", key];
+      return [`${protocol}\0${host}\0\0cafe/api`, value];
+    }),
   );
   const file = join(dir, "gitcafe", "credentials.json");
   writeFileSync(file, JSON.stringify({ version: 1, credentials }));
@@ -126,6 +129,16 @@ describe("gitcafe.resolve", () => {
     expect(resolve({ baseURL: "https://cafe.corp.example:8443" })?.token).toBe("gct_corp");
     expect(resolve({ baseURL: "https://cafe.corp.example" })).toBeNull();
     expect(resolve({ baseURL: "file:///srv/cafe" })).toBeNull();
+  });
+
+  it("reads an http instance's token under its http key", () => {
+    cafeLogin(
+      { "cafe.internal:8080": meta("http://cafe.internal:8080/api") },
+      { "http://cafe.internal:8080": { token: "gct_http" } },
+    );
+
+    expect(resolve({ baseURL: "http://cafe.internal:8080" })?.token).toBe("gct_http");
+    expect(resolve({ baseURL: "https://cafe.internal:8080" })).toBeNull();
   });
 
   it("skips what cafe skips: an exposed file, an expired token, a keyring login", () => {
@@ -284,7 +297,7 @@ describe("gitcafe.list", () => {
     );
     const fetch = stubFetch(() => Response.json(PRINCIPAL));
 
-    expect(await list({ verify: true })).toMatchObject([{ state: "expired" }]);
+    expect(await list({ verify: true })).toMatchObject([{ state: "expired", active: false }]);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -295,7 +308,7 @@ describe("gitcafe.list", () => {
     for (const expiresAt of ["2026-01-01T00:00:00.000Z", "soon"]) {
       cafeLogin(login, { "git.cafe": { token: "gct_old", username: null, expiresAt } });
       expect(resolve()).toBeNull();
-      expect(await list({ verify: true })).toMatchObject([{ state: "expired" }]);
+      expect(await list({ verify: true })).toMatchObject([{ state: "expired", active: false }]);
     }
     expect(fetch).not.toHaveBeenCalled();
   });

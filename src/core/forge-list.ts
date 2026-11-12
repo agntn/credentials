@@ -632,18 +632,19 @@ function originLoginCandidates(envWins: boolean): Candidate[] {
  */
 function cafeLoginCandidates(envWins: boolean): Candidate[] {
   return cafeLogins().map((login) => {
-    const saved = cafeSavedToken(login);
+    const saved = cafeSavedToken(login, login.apiUrl);
     const found = cafeLoginToken(login, saved?.token ?? null);
+    const expiresAt = saved?.expiresAt ?? login.expiresAt;
     return loginCandidate({
       forge: "gitcafe",
       host: login.host,
       account: login.account,
-      active: !envWins,
+      active: !envWins && (expiresAt === undefined || expiresAt > Date.now()),
       found: found.source,
       origin: found.origin,
       token: found.token,
       verifyUrl: `${login.apiUrl}/auth/principal`,
-      expiresAt: saved?.expiresAt ?? login.expiresAt,
+      expiresAt,
       missingReason:
         login.backend === "native"
           ? "cafe keeps this login in the system keyring, and only cafe can read it there"

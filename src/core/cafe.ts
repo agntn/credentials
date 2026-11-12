@@ -129,11 +129,12 @@ export function cafeLoginFor(apiUrl: string): CafeLogin | undefined {
 /**
  * Read a `file-plaintext` login's token, from a file only its owner can read.
  * @param login - The login, from `cafeLogins`.
+ * @param apiUrl - The API base asked for, scheme included.
  * @returns {CafeSavedToken | undefined} The token, or undefined for a keyring login or no entry.
  */
-export function cafeSavedToken(login: CafeLogin): CafeSavedToken | undefined {
+export function cafeSavedToken(login: CafeLogin, apiUrl: string): CafeSavedToken | undefined {
   if (login.backend !== "file-plaintext") return undefined;
-  const entry = savedCredentials()?.[credentialKey(login.apiUrl)];
+  const entry = savedCredentials()?.[credentialKey(apiUrl)];
   if (!isRecord(entry)) return undefined;
   const token = nonEmptyString(entry.token);
   if (token === undefined) return undefined;
