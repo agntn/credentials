@@ -80,7 +80,7 @@ console.log(cf.source, new Date(cf.expiresAt).toISOString());
 
 ```
 cli
-cli 2026-10-07T18:25:49.939Z
+cli 2026-11-12T01:49:57.174Z
 ```
 
 Both came from the CLIs. No env, no config. The Cloudflare token is cached until a minute before that timestamp. Then `cf` gets asked again.
@@ -104,33 +104,13 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/tangled`       | `TANGLED_HANDLE` with `TANGLED_PASSWORD`, `TANGLED_PDS_URL`     | none                                                        |
 | `@agntn/credentials/cloudflare`    | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                              |
 
-The forges return `null` when nothing turns up. An empty `GH_TOKEN=` still counts and means anonymous.
+Nothing found? You get `null`. Honest answer. An empty `GH_TOKEN=` still counts and means anonymous.
 
-A `tea` OAuth login needs `tea` on the machine. An SSH one has no token at all. tea signs those requests with your key. `list` still shows it, so it won't look lost.
+Cloudflare is the one that throws. Branch on the `code` of `CredentialsError`, `"token"` or `"account"`, not the message. Got a 401? Call it again with `refresh: true`.
 
-Sourcehut reads `access-token` or `access-token-cmd` from each instance in `hut/config`. The command runs the way hut runs it, and the first word it prints is the token. So `access-token-cmd pass show srht` just works. The token stays in `pass`, where you put it.
+Two lookups do more than read a file. Sourcehut runs hut's `access-token-cmd`, so the token stays in `pass`. On Linux, Azure DevOps reads the plain text PAT file az falls back to. Keyring was plan A.
 
-Gitee has no CLI login to chase: an explicit token, then `GITEE_TOKEN`, then `GITEE_ACCESS_TOKEN`. That last one is what `@gitee/mcp-gitee` reads, so an existing MCP setup just works. `list({ verify: true })` checks each token at the `/user` of `GITEE_API_BASE`, gitee.com by default. A private deployment's token stays home.
-
-Bitbucket tries an explicit token, `BITBUCKET_TOKEN`, then `BITBUCKET_API_TOKEN` with `BITBUCKET_EMAIL`. Access and OAuth tokens use bearer auth. API tokens need email for basic auth. No email, no deal. `resolve()` skips those tokens, and `list` notes why. `list --verify` checks API tokens at `api.bitbucket.org/2.0/user`. It skips access tokens because `/user` rejects bots. A 401 there would declare a working token dead.
-
-Azure DevOps tries an explicit token, then `AZURE_DEVOPS_EXT_PAT`, then a PAT file. `az devops login` saves PATs in the system keyring, and the package still can't read the keyring. But on Linux, a missing or broken keyring sends the PAT to the plain INI file `personalAccessTokens`. It's in the config dir, `~/.azure/azuredevops` by default.
-
-Keyring was plan A. Plan B is a text file. On a headless box, plan B can be the only copy, so that's a fallback worth having. `az devops` reads it whenever keyring returns nothing, and so does this package, on Linux only.
-
-`resolve()` prefers the organization's PAT, then one saved without an organization. A `baseURL` outside Azure DevOps gets nothing from the file. `resolve()` returns `username: ""` for basic auth and `organization` from `baseURL` or the default `az devops configure` saved. Any URL under the organization works.
-
-`list({ verify: true })` checks the organization's `connectionData`, the same check `az devops login` runs. An organization with public projects answers a bad PAT with HTTP 200: "Come in, Anonymous." That's a rejection. Without an organization, the PAT is never sent.
-
-Pushin slots into the same chain as the rest: an explicit token, then `PUSHIN_TOKEN`, then whatever `pun login` saved. The package reads `pun/hosts.json` directly. `pun auth token` would only hand back the same token from the same file, so that subprocess is pure ceremony.
-
-`resolve()` picks a saved token by the origin of `baseURL`, pushin.eu by default. `PUSHIN_URL` doesn't move that choice, so your company instance's token never lands on pushin.eu. `list({ verify: true })` checks each token as a bearer at `/api/v1/user`, where `pun` sends it: `PUSHIN_URL` for `PUSHIN_TOKEN`, the saved URL for each login.
-
-Cloudflare throws `CredentialsError` with code `"token"` when there's no usable token, or `"account"` when there's a token but no single account id. Branch on `code`, not the message. The message is for humans, and its wording can change. Matching its text is a brittle old habit: a wording fix could silently turn a config error into an auth error.
-
-Cloudflare also needs an account. It takes `accountId`, then `AGNTN_CLOUDFLARE_ACCOUNT_ID`, then `CLOUDFLARE_ACCOUNT_ID`. If none is set, the `cf` session's account is used. That only works when it reaches exactly one. Got a 401 back? Call it with `refresh: true`.
-
-Everything else lives in the types: [`src/core/forge.ts`](./src/core/forge.ts), [`src/tangled.ts`](./src/tangled.ts) and [`src/cloudflare.ts`](./src/cloudflare.ts).
+The exact order per service sits in the doc comments: [`src/core/forge.ts`](./src/core/forge.ts), [`src/tangled.ts`](./src/tangled.ts) and [`src/cloudflare.ts`](./src/cloudflare.ts).
 
 ## 🤖 Agents
 
