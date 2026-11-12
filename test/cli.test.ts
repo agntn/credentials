@@ -52,6 +52,10 @@ const tokens = new Set([
   "CURSOR_AUTH_TOKEN",
   "CURSOR_API_KEY",
   "CURSOR_ORIGIN_ENDPOINT",
+  "CAFE_TOKEN",
+  "CAFE_HOST",
+  "CAFE_AUTH_FILE",
+  "CAFE_CREDENTIAL_FILE",
   "TANGLED_HANDLE",
   "TANGLED_PASSWORD",
   "TANGLED_PDS_URL",
@@ -126,7 +130,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, tangled, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, gitcafe, tangled, cloudflare\n",
     });
   });
 
@@ -147,7 +151,7 @@ describe("credentials CLI", () => {
       code: 1,
       stdout: "",
       stderr:
-        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, tangled, cloudflare\n",
+        "Invalid arguments at [SERVICE]: must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, gitcafe, tangled, cloudflare\n",
     });
     expect(run("mcp", "--stdio")).toMatchObject({
       code: 1,

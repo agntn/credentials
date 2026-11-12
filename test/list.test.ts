@@ -804,7 +804,7 @@ describe("listCredentials", () => {
 
   it("refuses an unknown service and a verify that isn't a boolean", async () => {
     await expect(listCredentials({ service: "launch\npad" })).rejects.toThrow(
-      'Unknown service "launch pad": use one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, tangled, cloudflare',
+      'Unknown service "launch pad": use one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, gitcafe, tangled, cloudflare',
     );
     await expect(listCredentials({ verify: "true" as unknown as boolean })).rejects.toThrow(
       "verify must be true or false",
