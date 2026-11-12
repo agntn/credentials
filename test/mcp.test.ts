@@ -45,6 +45,7 @@ describe("credentials MCP server", () => {
             "azure-devops",
             "pushin",
             "cursor-origin",
+            "gitcafe",
             "tangled",
             "cloudflare",
           ],
@@ -90,6 +91,7 @@ describe("credentials MCP server", () => {
         "azure-devops: nothing found (set AZURE_DEVOPS_EXT_PAT)",
         "pushin: nothing found (set PUSHIN_TOKEN or run pun login)",
         "cursor-origin: nothing found (set CURSOR_AUTH_TOKEN or run origin auth login)",
+        "gitcafe: nothing found (set CAFE_TOKEN or run cafe auth login)",
         "tangled: nothing found (set TANGLED_HANDLE and TANGLED_PASSWORD, an app password)",
         "cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)",
         "Unchecked entries are only known to exist. Run again with verify (--verify in the CLI) to ask each service.",
@@ -114,7 +116,7 @@ describe("credentials MCP server", () => {
     expect(text(unknown)).toContain('unknown property "servic"');
     expect(outside.isError).toBe(true);
     expect(text(outside)).toContain(
-      "must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, tangled, cloudflare",
+      "must be one of github, gitlab, gitea, gitee, sourcehut, bitbucket, azure-devops, pushin, cursor-origin, gitcafe, tangled, cloudflare",
     );
   });
 });

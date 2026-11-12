@@ -13,6 +13,7 @@ import { list as listBitbucket } from "./bitbucket.ts";
 import { list as listCloudflare } from "./cloudflare.ts";
 import type { CredentialInfo, Service } from "./core/types.ts";
 import { list as listCursorOrigin } from "./cursor-origin.ts";
+import { list as listGitcafe } from "./gitcafe.ts";
 import { list as listGitea } from "./gitea.ts";
 import { list as listGitee } from "./gitee.ts";
 import { list as listGithub } from "./github.ts";
@@ -55,6 +56,7 @@ const LISTERS: Record<
   "azure-devops": listAzureDevOps,
   pushin: listPushin,
   "cursor-origin": listCursorOrigin,
+  gitcafe: listGitcafe,
   tangled: listTangled,
   cloudflare: listCloudflare,
 };
@@ -70,6 +72,7 @@ const SETUP: Record<Service, string> = {
   "azure-devops": "set AZURE_DEVOPS_EXT_PAT",
   pushin: "set PUSHIN_TOKEN or run pun login",
   "cursor-origin": "set CURSOR_AUTH_TOKEN or run origin auth login",
+  gitcafe: "set CAFE_TOKEN or run cafe auth login",
   tangled: "set TANGLED_HANDLE and TANGLED_PASSWORD, an app password",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };

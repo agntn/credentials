@@ -1,5 +1,5 @@
 /**
- * Every in-process test starts on an empty machine: no token variables, no gh, glab, tea,
+ * Every in-process test starts on an empty machine: no token variables, no gh, glab, tea, cafe,
  * origin or cf on PATH, and empty config dirs, `~/.config/origin-cli` included. Set directly, not
  * through `vi.stubEnv`, so a test's `vi.unstubAllEnvs()` comes back here instead of to the
  * developer's real environment.
@@ -38,6 +38,10 @@ for (const key of [
   "CURSOR_AUTH_TOKEN",
   "CURSOR_API_KEY",
   "CURSOR_ORIGIN_ENDPOINT",
+  "CAFE_TOKEN",
+  "CAFE_HOST",
+  "CAFE_AUTH_FILE",
+  "CAFE_CREDENTIAL_FILE",
   "TANGLED_HANDLE",
   "TANGLED_PASSWORD",
   "TANGLED_PDS_URL",

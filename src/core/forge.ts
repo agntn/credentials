@@ -31,7 +31,8 @@ export type Forge =
   | "bitbucket"
   | "azure-devops"
   | "pushin"
-  | "cursor-origin";
+  | "cursor-origin"
+  | "gitcafe";
 
 /** A forge token and the step of the chain that found it. */
 export interface ForgeCredential {
@@ -69,6 +70,7 @@ export const DEFAULT_HOSTS: Record<Forge, string> = {
   "azure-devops": "dev.azure.com",
   pushin: "pushin.eu",
   "cursor-origin": ORIGIN_HOST,
+  gitcafe: "git.cafe",
 };
 
 export const ENV_KEYS: Record<Forge, readonly string[]> = {
@@ -86,6 +88,8 @@ export const ENV_KEYS: Record<Forge, readonly string[]> = {
   pushin: ["PUSHIN_TOKEN"],
   /** The bearer `origin` sends as is. `CURSOR_API_KEY` is not one: `origin` trades it. */
   "cursor-origin": ["CURSOR_AUTH_TOKEN"],
+  /** The one `cafe` reads, ahead of its own login. */
+  gitcafe: ["CAFE_TOKEN"],
 };
 
 /** Each CLI's login file, under the name `list` shows. */
@@ -96,6 +100,7 @@ export const CONFIG_FILES = {
   "azure-devops": "az devops personalAccessTokens",
   pushin: "pun hosts.json",
   "cursor-origin": "origin credentials.json",
+  gitcafe: "cafe credentials.json",
 } as const;
 
 /** Token variables that only work with a login beside them. */
@@ -266,6 +271,8 @@ function teaTokenByName(host: string): string | null {
  * tea's other commands build a login from `GITEA_TOKEN` or `GH_TOKEN` with `GITEA_INSTANCE_URL`.
  */
 const CLI_TOKEN_VARIABLES: Record<ForgeCli, readonly string[]> = {
+  /** Unset, `cafe` answers for `--host` alone and phones no one. */
+  cafe: ["CAFE_TOKEN", "CAFE_HOST", "CAFE_GIT_HOST", "CAFE_TELEMETRY"],
   gh: ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"],
   glab: ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"],
   /** Without the endpoint, `origin` answers for origin.cursor.com, the host it was asked about. */
@@ -273,7 +280,7 @@ const CLI_TOKEN_VARIABLES: Record<ForgeCli, readonly string[]> = {
   tea: ["GITEA_TOKEN", "GH_TOKEN", "GITEA_INSTANCE_URL"],
 };
 
-export type ForgeCli = "gh" | "glab" | "origin" | "tea";
+export type ForgeCli = "cafe" | "gh" | "glab" | "origin" | "tea";
 
 /**
  * Run a CLI without the token variables it would answer with, and take its trimmed stdout.

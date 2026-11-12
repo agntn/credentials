@@ -11,6 +11,7 @@ export default defineBuildConfig({
         "./src/bitbucket.ts",
         "./src/cloudflare.ts",
         "./src/cursor-origin.ts",
+        "./src/gitcafe.ts",
         "./src/gitea.ts",
         "./src/gitee.ts",
         "./src/github.ts",

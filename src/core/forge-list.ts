@@ -35,6 +35,15 @@ import {
   storedPatFor,
   storedPats,
 } from "./azure-devops.ts";
+import {
+  CAFE_API,
+  cafeApiUrl,
+  cafeCliToken,
+  cafeHost,
+  type CafeLogin,
+  cafeLogins,
+  cafeSavedToken,
+} from "./cafe.ts";
 import { compact, epoch, epochSeconds, isRecord, nonEmptyString } from "./fields.ts";
 import { hutInstanceFor, hutInstances, hutMetaQueryUrl, hutOrigin, hutToken } from "./hut.ts";
 import { ORIGIN_API, ORIGIN_HOST, originApiBase, originLogin } from "./origin.ts";
@@ -170,11 +179,30 @@ function envNote(facts: EnvFacts, credential: ForgeCredential | undefined): stri
 function envVerifyUrl(forge: Forge, host: string | undefined): string | undefined {
   if (host === undefined || forge === "sourcehut") return undefined;
   if (forge === "azure-devops") return `${host}/_apis/connectionData`;
-  if (forge === "pushin") return `${pushinUrl().replace(/\/+$/, "")}/api/v1/user`;
-  if (forge === "cursor-origin") return `${originApiBase()}/rate_limit`;
   if (forge === "gitea") return userEndpoint(forge, process.env.GITEA_INSTANCE_URL ?? "");
-  return forge === "gitee" ? `${giteeApiBase()}/user` : userEndpoint(forge, `https://${host}`);
+  if (forge === "gitee") return `${giteeApiBase()}/user`;
+  if (onOwnHost(forge)) return userEndpoint(forge, `https://${host}`);
+  return PAIRED_VERIFY_URLS[forge]?.();
 }
+
+/**
+ * Tell the forges whose token variable is checked on the host itself.
+ * @param forge - The forge.
+ * @returns {boolean} True for GitHub, GitLab and Bitbucket.
+ */
+function onOwnHost(forge: Forge): forge is "github" | "gitlab" | "bitbucket" {
+  return forge === "github" || forge === "gitlab" || forge === "bitbucket";
+}
+
+/** Forges whose token variable is checked on the API another variable points at. */
+const PAIRED_VERIFY_URLS: Partial<Record<Forge, () => string | undefined>> = {
+  pushin: () => `${pushinUrl().replace(/\/+$/, "")}/api/v1/user`,
+  "cursor-origin": () => `${originApiBase()}/rate_limit`,
+  gitcafe: () => {
+    const api = cafeEnvApi();
+    return api === undefined ? undefined : `${api}/auth/principal`;
+  },
+};
 
 /**
  * Where pun sends PUSHIN_TOKEN: `PUSHIN_URL`, or pushin.eu.
@@ -227,7 +255,19 @@ const PAIRED_HOSTS: Partial<Record<Forge, () => string | undefined>> = {
   "azure-devops": defaultOrganization,
   pushin: pushinHost,
   "cursor-origin": originHost,
+  gitcafe: () => {
+    const api = cafeEnvApi();
+    return api === undefined ? undefined : cafeHost(api);
+  },
 };
+
+/**
+ * Where `cafe` sends CAFE_TOKEN: `CAFE_HOST`, or git.cafe.
+ * @returns {string | undefined} The API base, or undefined for a non-http `CAFE_HOST`.
+ */
+function cafeEnvApi(): string | undefined {
+  return cafeApiUrl(process.env.CAFE_HOST || CAFE_API);
+}
 
 /**
  * The host behind `CURSOR_ORIGIN_ENDPOINT`, origin.cursor.com for its own API.
@@ -257,6 +297,7 @@ const LOGIN_READERS: Partial<Record<Forge, (envWins: boolean) => Candidate[]>> =
   "azure-devops": azureDevOpsLogins,
   pushin: punLoginCandidates,
   "cursor-origin": originLoginCandidates,
+  gitcafe: cafeLoginCandidates,
 };
 
 /**
@@ -406,8 +447,8 @@ function teaInstance(url: string | undefined): TeaInstance | undefined {
   return url && host ? { url, host } : undefined;
 }
 
-/** A tea login's token and where it came from. */
-interface TeaToken {
+/** A login's token and where it came from. */
+interface LoginToken {
   readonly token: string | null;
   readonly source: CredentialSource | undefined;
   readonly origin: string;
@@ -417,9 +458,9 @@ interface TeaToken {
  * Take a login's token from tea, or from the file when tea is missing.
  * @param entry - The login's fields.
  * @param host - Host and port of its instance.
- * @returns {TeaToken} The token and where it came from.
+ * @returns {LoginToken} The token and where it came from.
  */
-function teaLoginToken(entry: TeaEntry, host: string): TeaToken {
+function teaLoginToken(entry: TeaEntry, host: string): LoginToken {
   const fromCli = entry.name ? teaToken(host, entry.name) : null;
   if (fromCli !== null) return { token: fromCli, source: "cli", origin: "tea" };
   const fromFile = entry.token || null;
@@ -585,6 +626,61 @@ function originLoginCandidates(envWins: boolean): Candidate[] {
 }
 
 /**
+ * Logins in `cafe.json`, each checked at the `/auth/principal` of its own API.
+ * @param envWins - Whether CAFE_TOKEN wins over every login.
+ * @returns {Candidate[]} One entry per host.
+ */
+function cafeLoginCandidates(envWins: boolean): Candidate[] {
+  return cafeLogins().map((login) => {
+    const saved = cafeSavedToken(login, login.apiUrl);
+    const found = cafeLoginToken(login, saved?.token ?? null);
+    const expiresAt = cafeExpiry(saved === undefined ? login.expiresAt : saved.expiresAt, found);
+    return loginCandidate({
+      forge: "gitcafe",
+      host: login.host,
+      account: login.account,
+      active: !envWins && (expiresAt === undefined || expiresAt > Date.now()),
+      found: found.source,
+      origin: found.origin,
+      token: found.token,
+      verifyUrl: `${login.apiUrl}/auth/principal`,
+      expiresAt,
+      missingReason:
+        login.backend === "native"
+          ? "cafe keeps this login in the system keyring, and only cafe can read it there"
+          : undefined,
+    });
+  });
+}
+
+/**
+ * Keep only an expiry `resolve` goes by: `cafe` hands out no token past its own.
+ * @param recorded - The saved token's expiry, else the login's.
+ * @param found - Where the token came from.
+ * @returns {number | undefined} The expiry, or undefined when there is none to go by.
+ */
+function cafeExpiry(recorded: number | undefined, found: LoginToken): number | undefined {
+  if (found.source !== "cli" || recorded === undefined) return recorded;
+  return recorded > Date.now() ? recorded : undefined;
+}
+
+/**
+ * Take a login's token from `cafe`, or from its plaintext file when `cafe` is missing.
+ * @param login - The login.
+ * @param fromFile - Its token in `credentials.json`, if any.
+ * @returns {LoginToken} The token and where it came from.
+ */
+function cafeLoginToken(login: CafeLogin, fromFile: string | null): LoginToken {
+  const fromCli = cafeCliToken(login.apiUrl);
+  if (fromCli !== null) return { token: fromCli, source: "cli", origin: "cafe" };
+  return {
+    token: fromFile,
+    source: fromFile === null ? undefined : "config",
+    origin: login.backend === "native" ? "cafe cafe.json" : CONFIG_FILES.gitcafe,
+  };
+}
+
+/**
  * Describe CURSOR_API_KEY, which `origin` trades for a token and never sends itself.
  * @param envWins - Whether CURSOR_AUTH_TOKEN wins over it.
  * @returns {Candidate} An entry with no token, so it is never checked.
@@ -680,7 +776,10 @@ function loginState(facts: LoginFacts): CredentialState {
  * @returns {string} The `/user` endpoint.
  */
 function userEndpoint(
-  forge: Exclude<Forge, "sourcehut" | "gitee" | "azure-devops" | "pushin" | "cursor-origin">,
+  forge: Exclude<
+    Forge,
+    "sourcehut" | "gitee" | "azure-devops" | "pushin" | "cursor-origin" | "gitcafe"
+  >,
   origin: string,
 ): string {
   const base = origin.replace(/\/+$/, "");
@@ -705,6 +804,9 @@ const BITBUCKET_REFUSALS = [401];
 
 /** Origin's 403 can be a team's IP allowlist turning the machine away, not the token. */
 const ORIGIN_REFUSALS = [401];
+
+/** GitCafe's 403 is a resource policy saying no, not a dead token. */
+const GITCAFE_REFUSALS = [401];
 
 /**
  * Build the request that shows a forge one token.
@@ -731,6 +833,8 @@ function probeRequest(
       return { authorization: `Bearer ${token}`, refusals: SOURCEHUT_REFUSALS, body: SOURCEHUT_ME };
     case "cursor-origin":
       return { authorization: `Bearer ${token}`, refusals: ORIGIN_REFUSALS };
+    case "gitcafe":
+      return { authorization: `Bearer ${token}`, refusals: GITCAFE_REFUSALS };
     default:
       return { authorization: `Bearer ${token}` };
   }
@@ -785,7 +889,7 @@ function answerFacts(forge: Forge, answer: Probe): Partial<CredentialInfo> {
 
 /**
  * Read the user out of a forge's answer: `login` on GitHub, Gitee and Pushin, `username` on GitLab,
- * Gitea and Bitbucket, `data.me.canonicalName` (`~name`) from Sourcehut's GraphQL.
+ * Gitea and Bitbucket, `handle` on GitCafe, `data.me.canonicalName` (`~name`) on Sourcehut.
  * @param forge - The forge that answered.
  * @param body - The parsed body.
  * @returns {string | undefined} The user, when the answer names one.
@@ -796,5 +900,6 @@ function accountOf(forge: Forge, body: unknown): string | undefined {
     const me = isRecord(data) ? data.me : undefined;
     return isRecord(me) ? nonEmptyString(me.canonicalName) : undefined;
   }
+  if (forge === "gitcafe") return field(body, "handle");
   return field(body, forge === "github" ? "login" : "username") ?? field(body, "login");
 }
