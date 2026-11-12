@@ -31,8 +31,8 @@
   },
   "files": [
     "dist",
-    "packages/omp/extensions",
-    "packages/pi/extensions"
+    "extensions/omp",
+    "extensions/pi"
   ],
   "type": "module",
   "sideEffects": false,
@@ -147,12 +147,12 @@
   "packageManager": "pnpm@12.10.1",
   "omp": {
     "extensions": [
-      "./packages/omp/extensions/credentials.ts"
+      "./extensions/omp/credentials.ts"
     ]
   },
   "pi": {
     "extensions": [
-      "./packages/pi/extensions/credentials.ts"
+      "./extensions/pi/credentials.ts"
     ]
   }
 }
