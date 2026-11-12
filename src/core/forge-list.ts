@@ -634,7 +634,7 @@ function cafeLoginCandidates(envWins: boolean): Candidate[] {
   return cafeLogins().map((login) => {
     const saved = cafeSavedToken(login, login.apiUrl);
     const found = cafeLoginToken(login, saved?.token ?? null);
-    const expiresAt = saved?.expiresAt ?? login.expiresAt;
+    const expiresAt = cafeExpiry(saved === undefined ? login.expiresAt : saved.expiresAt, found);
     return loginCandidate({
       forge: "gitcafe",
       host: login.host,
@@ -651,6 +651,17 @@ function cafeLoginCandidates(envWins: boolean): Candidate[] {
           : undefined,
     });
   });
+}
+
+/**
+ * Keep only an expiry `resolve` goes by: `cafe` hands out no token past its own.
+ * @param recorded - The saved token's expiry, else the login's.
+ * @param found - Where the token came from.
+ * @returns {number | undefined} The expiry, or undefined when there is none to go by.
+ */
+function cafeExpiry(recorded: number | undefined, found: LoginToken): number | undefined {
+  if (found.source !== "cli" || recorded === undefined) return recorded;
+  return recorded > Date.now() ? recorded : undefined;
 }
 
 /**

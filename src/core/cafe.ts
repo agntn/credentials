@@ -134,30 +134,56 @@ export function cafeLoginFor(apiUrl: string): CafeLogin | undefined {
  */
 export function cafeSavedToken(login: CafeLogin, apiUrl: string): CafeSavedToken | undefined {
   if (login.backend !== "file-plaintext") return undefined;
-  const entry = savedCredentials()?.[credentialKey(apiUrl)];
-  if (!isRecord(entry)) return undefined;
-  const token = nonEmptyString(entry.token);
-  if (token === undefined) return undefined;
+  const credentials = savedCredentials();
+  const key = credentialKey(apiUrl);
+  const entry =
+    credentials !== undefined && Object.hasOwn(credentials, key) ? credentials[key] : undefined;
+  const token = nonEmptyString(entry?.token);
+  if (entry === undefined || token === undefined) return undefined;
   const { expiresAt } = entry;
-  return typeof expiresAt === "string" ? { token, expiresAt: epoch(expiresAt) ?? 0 } : { token };
+  return expiresAt === null ? { token } : { token, expiresAt: epoch(expiresAt) ?? 0 };
+}
+
+/** One entry of `credentials.json`, every field `cafe` requires. */
+interface SavedEntry {
+  readonly token: string;
+  readonly username: string | null;
+  readonly expiresAt: string | null;
 }
 
 /**
  * Read the plaintext file: `CAFE_CREDENTIAL_FILE`, else the one beside `cafe.json`.
- * @returns {Record<string, unknown> | undefined} Its `credentials`, or undefined.
+ * @returns {Record<string, SavedEntry> | undefined} Its `credentials`, or undefined.
  */
-function savedCredentials(): Record<string, unknown> | undefined {
+function savedCredentials(): Record<string, SavedEntry> | undefined {
   const path =
     process.env.CAFE_CREDENTIAL_FILE || join(dirname(cafeAuthFile()), "credentials.json");
   const content = readPrivateFile(path);
   if (content === undefined) return undefined;
   try {
     const parsed: unknown = JSON.parse(content);
-    const credentials = isRecord(parsed) ? parsed.credentials : undefined;
-    return isRecord(credentials) ? credentials : undefined;
+    const credentials = isRecord(parsed) && parsed.version === 1 ? parsed.credentials : undefined;
+    if (!isRecord(credentials)) return undefined;
+    const entries = Object.entries(credentials);
+    const valid = entries.filter((entry): entry is [string, SavedEntry] => isSavedEntry(entry[1]));
+    return valid.length === entries.length ? Object.fromEntries(valid) : undefined;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Check an entry against `cafe`'s schema. One bad entry makes `cafe` drop the whole file.
+ * @param value - The entry.
+ * @returns {value is SavedEntry} Whether `cafe` would read it.
+ */
+function isSavedEntry(value: unknown): value is SavedEntry {
+  if (!isRecord(value) || typeof value.token !== "string") return false;
+  const { username, expiresAt } = value;
+  return (
+    (username === null || typeof username === "string") &&
+    (expiresAt === null || typeof expiresAt === "string")
+  );
 }
 
 /**

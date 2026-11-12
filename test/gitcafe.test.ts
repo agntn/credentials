@@ -18,10 +18,10 @@ function meta(apiUrl: string, fields: Readonly<Record<string, unknown>> = {}) {
   return { apiUrl, backend: "file-plaintext", updatedAt: "2026-11-12T00:00:00.000Z", ...fields };
 }
 
-/* Write cafe.json and credentials.json the way `cafe auth login --store file` does. */
+/* Write cafe.json and credentials.json like `cafe auth login --store file`, nulls included. */
 function cafeLogin(
   hosts: Readonly<Record<string, unknown>>,
-  tokens: Readonly<Record<string, unknown>> = {},
+  tokens: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {},
   mode = 0o600,
 ): string {
   const dir = mkdtempSync(join(tmpdir(), "credentials-cafe-"));
@@ -30,7 +30,7 @@ function cafeLogin(
   const credentials = Object.fromEntries(
     Object.entries(tokens).map(([key, value]) => {
       const [protocol, host] = key.startsWith("http://") ? ["http", key.slice(7)] : ["https", key];
-      return [`${protocol}\0${host}\0\0cafe/api`, value];
+      return [`${protocol}\0${host}\0\0cafe/api`, { username: null, expiresAt: null, ...value }];
     }),
   );
   const file = join(dir, "gitcafe", "credentials.json");
@@ -161,6 +161,20 @@ describe("gitcafe.resolve", () => {
     expect(resolve()).toBeNull();
   });
 
+  it("drops the whole file like cafe when one entry misses a field", () => {
+    const login = { "git.cafe": meta("https://git.cafe/api") };
+    cafeLogin(login, {
+      "git.cafe": { token: "gct_bare", username: undefined, expiresAt: undefined },
+    });
+    expect(resolve()).toBeNull();
+
+    cafeLogin(login, {
+      "git.cafe": { token: "gct_ok" },
+      other: { token: "x", username: undefined },
+    });
+    expect(resolve()).toBeNull();
+  });
+
   it("never hands a token filed under another host's apiUrl", () => {
     cafeLogin(
       { "git.cafe": meta("https://evil.example/api") },
@@ -236,7 +250,7 @@ describe("gitcafe.list", () => {
           expiresAt: new Date(soon).toISOString(),
         }),
       },
-      { "cafe.corp.example": { token: "gct_corp", username: null, expiresAt: null } },
+      { "cafe.corp.example": { token: "gct_corp", expiresAt: new Date(soon).toISOString() } },
     );
     const fetch = stubFetch(() => Response.json(PRINCIPAL));
 
@@ -290,15 +304,13 @@ describe("gitcafe.list", () => {
     ]);
   });
 
-  it("marks a login past its recorded expiry and never sends it", async () => {
-    cafeLogin(
-      { "git.cafe": meta("https://git.cafe/api", { expiresAt: "2026-01-01T00:00:00.000Z" }) },
-      { "git.cafe": { token: "gct_old" } },
-    );
-    const fetch = stubFetch(() => Response.json(PRINCIPAL));
+  it("shows a keyring login past its recorded expiry as expired", async () => {
+    const expiresAt = "2026-01-01T00:00:00.000Z";
+    cafeLogin({ "git.cafe": meta("https://git.cafe/api", { backend: "native", expiresAt }) });
 
-    expect(await list({ verify: true })).toMatchObject([{ state: "expired", active: false }]);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(await list({ verify: true })).toMatchObject([
+      { state: "expired", active: false, expiresAt: Date.parse(expiresAt) },
+    ]);
   });
 
   it("dates a plaintext token by its own expiry, the one resolve goes by", async () => {
@@ -311,6 +323,23 @@ describe("gitcafe.list", () => {
       expect(await list({ verify: true })).toMatchObject([{ state: "expired", active: false }]);
     }
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("lets a stale cafe.json date expire nothing resolve still hands out", async () => {
+    const stale = { expiresAt: "2026-01-01T00:00:00.000Z" };
+    cafeLogin(
+      { "git.cafe": meta("https://git.cafe/api", stale) },
+      { "git.cafe": { token: "gct_undated", username: null, expiresAt: null } },
+    );
+    expect(resolve()?.token).toBe("gct_undated");
+    expect(await list()).toMatchObject([{ state: "unchecked", active: true }]);
+
+    cafeLogin({ "git.cafe": meta("https://git.cafe/api", { ...stale, backend: "native" }) });
+    cafeCli();
+    expect(resolve()?.token).toBe("gct_cli_git.cafe");
+    expect(await list()).toEqual([
+      expect.objectContaining({ source: "cli", state: "unchecked", active: true }),
+    ]);
   });
 
   it("reads git.cafe's 401 as a rejected token and a 403 as nothing known", async () => {
