@@ -30,8 +30,8 @@ export interface CfCredentials {
 export interface CfUnreadable {
   /** Why, in words that quote no file and no key. */
   readonly unreadable: string;
-  /** Whether the keyring is what stands in the way. */
-  readonly keyring: boolean;
+  /** Whether cf sealed the file, so only a login without the keyring leaves a readable one. */
+  readonly sealed: boolean;
   readonly cause?: unknown;
 }
 
@@ -84,8 +84,8 @@ export async function readCfCredentials(path: string): Promise<CfCredentials | C
     : credentials(stored);
 }
 
-function unreadable(reason: string, keyring = false): CfUnreadable {
-  return { unreadable: reason, keyring };
+function unreadable(reason: string, sealed = false): CfUnreadable {
+  return { unreadable: reason, sealed };
 }
 
 /* A SyntaxError quotes the start of its input, so it stops here and never becomes a cause. */

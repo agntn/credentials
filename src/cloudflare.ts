@@ -233,7 +233,7 @@ async function cfWhoami(): Promise<string> {
  */
 async function readCfToken(source: unknown): Promise<CfCredentials | CfUnreadable> {
   if (typeof source !== "string" || !source.startsWith(CF_OAUTH_SOURCE)) {
-    return { unreadable: "cf CLI reports no OAuth session", keyring: false };
+    return { unreadable: "cf CLI reports no OAuth session", sealed: false };
   }
   return readCfCredentials(source.slice(CF_OAUTH_SOURCE.length));
 }
@@ -241,7 +241,7 @@ async function readCfToken(source: unknown): Promise<CfCredentials | CfUnreadabl
 function unreadableSession(stored: Readonly<CfUnreadable>): CredentialsError {
   return new CredentialsError(
     SERVICE,
-    `${stored.unreadable}. ${stored.keyring ? KEYRING_HINT : SETUP_HINT}`,
+    `${stored.unreadable}. ${stored.sealed ? KEYRING_HINT : SETUP_HINT}`,
     { code: "token", ...(stored.cause === undefined ? {} : { cause: stored.cause }) },
   );
 }
