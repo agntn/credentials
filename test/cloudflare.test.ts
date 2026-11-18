@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createCipheriv } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,11 +11,60 @@ interface CfState {
   whoami: Record<string, unknown>;
   token?: string;
   expiresAt?: string;
+  /* Seal the file the way cf does with `keyring_enabled`, under this key. */
+  sealedWith?: Buffer;
 }
 
 const credentialsFile = join(mkdtempSync(join(tmpdir(), "cf-oauth-")), "default.json");
+const KEY = Buffer.alloc(32, 7);
+const realPlatform = process.platform;
 let cf: CfState;
 let cfEnv: NodeJS.ProcessEnv[];
+/* What the keyring tool prints, or null when it exits 1 for no such item. */
+let keyring: string | null;
+let keyringCalls: string[][];
+
+/* Write cf's credentials file: plain JSON, or the AES-256-GCM envelope of cf 1.0.0-rc.1. */
+function writeCredentials(): void {
+  const plain = JSON.stringify({
+    oauth_token: cf.token,
+    expiration_time: cf.expiresAt,
+    scopes: [],
+  });
+  if (cf.sealedWith === undefined) {
+    writeFileSync(credentialsFile, plain);
+    return;
+  }
+  const iv = Buffer.alloc(12, 1);
+  const cipher = createCipheriv("aes-256-gcm", cf.sealedWith, iv);
+  const ciphertext = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  writeFileSync(
+    credentialsFile,
+    JSON.stringify({
+      v: 1,
+      alg: "AES-256-GCM",
+      iv: iv.toString("base64"),
+      tag: cipher.getAuthTag().toString("base64"),
+      ciphertext: ciphertext.toString("base64"),
+    }),
+  );
+}
+
+/* Answer the keyring lookup, and fail the test on any other command. */
+function answerKeyring(
+  command: string[],
+  callback: (error: Error | null, stdout: string, stderr: string) => void,
+): void {
+  expect(command[0]).not.toBe("cf");
+  keyringCalls.push(command);
+  queueMicrotask(() =>
+    keyring === null ? callback(new Error("exit 1"), "", "") : callback(null, `${keyring}\n`, ""),
+  );
+}
+
+function onPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, "platform", { value: platform, configurable: true });
+}
 
 /* Answer `cf auth whoami` the way cf 1.0.0-beta.5 does for an OAuth login. */
 function stubCf(): void {
@@ -27,12 +77,13 @@ function stubCf(): void {
       { env: NodeJS.ProcessEnv },
       (error: Error | null, stdout: string, stderr: string) => void,
     ];
-    expect([file, ...argv]).toEqual(["cf", "auth", "whoami"]);
+    if (file !== "cf") {
+      answerKeyring([file, ...argv], callback);
+      return;
+    }
+    expect(argv).toEqual(["auth", "whoami"]);
     cfEnv.push(options.env);
-    writeFileSync(
-      credentialsFile,
-      JSON.stringify({ oauth_token: cf.token, expiration_time: cf.expiresAt, scopes: [] }),
-    );
+    writeCredentials();
     queueMicrotask(() => callback(null, JSON.stringify(cf.whoami), ""));
   }) as unknown as typeof execFile);
 }
@@ -50,10 +101,7 @@ function holdCf(): { answer: () => void; signals: unknown[] } {
     ];
     signals.push(options.signal);
     answers.push(() => {
-      writeFileSync(
-        credentialsFile,
-        JSON.stringify({ oauth_token: cf.token, expiration_time: cf.expiresAt, scopes: [] }),
-      );
+      writeCredentials();
       callback(null, JSON.stringify(cf.whoami), "");
     });
   }) as unknown as typeof execFile);
@@ -93,11 +141,14 @@ beforeEach(() => {
     token: "oauth-1",
     expiresAt: "2026-09-30T09:00:00.000Z",
   };
+  keyring = JSON.stringify({ v: 1, key: KEY.toString("base64"), created: "2026-09-01T00:00:00Z" });
+  keyringCalls = [];
   stubCf();
   vi.useFakeTimers({ now: new Date("2026-09-30T08:00:00.000Z"), toFake: ["Date"] });
 });
 
 afterEach(() => {
+  onPlatform(realPlatform);
   vi.useRealTimers();
   vi.unstubAllEnvs();
 });
@@ -337,6 +388,80 @@ describe("cloudflare.resolve", () => {
     expect(messages(error)).toContain("Cannot read the cf OAuth credentials file");
     expect(messages(error)).not.toContain("SECRET");
   });
+
+  it("opens the session cf sealed with a key from secret-tool", async () => {
+    onPlatform("linux");
+    cf.sealedWith = KEY;
+    const { resolve } = await load();
+
+    await expect(resolve()).resolves.toEqual({
+      token: "oauth-1",
+      accountId: "acct-1",
+      source: "cli",
+      expiresAt: Date.parse("2026-09-30T09:00:00.000Z"),
+    });
+    expect(keyringCalls).toEqual([
+      ["secret-tool", "lookup", "service", "cloudflare", "account", "default"],
+    ]);
+  });
+
+  it("asks the macOS Keychain for the same key", async () => {
+    onPlatform("darwin");
+    cf.sealedWith = KEY;
+    const { resolve } = await load();
+
+    await expect(resolve()).resolves.toMatchObject({ token: "oauth-1" });
+    expect(keyringCalls).toEqual([
+      ["/usr/bin/security", "find-generic-password", "-s", "cloudflare", "-a", "default", "-w"],
+    ]);
+  });
+
+  it("stops recommending a plain cf auth login when the keyring keeps the key", async () => {
+    onPlatform("linux");
+    cf.sealedWith = KEY;
+    keyring = null;
+    const { resolve } = await load();
+
+    await expect(resolve()).rejects.toMatchObject({
+      code: "token",
+      message:
+        "The cf OAuth credentials file is encrypted, and its key could not be read from the OS keyring. Set CLOUDFLARE_API_TOKEN, or run `cf auth login --no-use-keyring` to keep the session in a file this package can read",
+    });
+  });
+
+  it("never runs a keyring tool where cf uses a native binding", async () => {
+    onPlatform("win32");
+    cf.sealedWith = KEY;
+    const { resolve } = await load();
+
+    await expect(resolve()).rejects.toThrow("could not be read from the OS keyring");
+    expect(keyringCalls).toEqual([]);
+  });
+
+  it("blames the format, not the login, for an envelope cf has since changed", async () => {
+    vi.mocked(execFile).mockImplementation(((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: null, stdout: string) => void;
+      writeFileSync(credentialsFile, JSON.stringify({ v: 2, alg: "X", ciphertext: "AAAA" }));
+      queueMicrotask(() => callback(null, JSON.stringify(loggedIn(["acct-1"]))));
+    }) as unknown as typeof execFile);
+    const { resolve } = await load();
+
+    await expect(resolve()).rejects.toThrow(
+      "encrypted in a way this package cannot read. Set CLOUDFLARE_API_TOKEN, or run `cf auth login --no-use-keyring`",
+    );
+  });
+
+  it("refuses a key that does not open the file, without quoting either", async () => {
+    onPlatform("linux");
+    cf.sealedWith = Buffer.alloc(32, 9);
+    const { resolve } = await load();
+
+    const error = await resolve().catch((failure: unknown) => failure);
+    expect(messages(error)).toContain(
+      "The key in the OS keyring does not open the cf OAuth credentials file",
+    );
+    expect(messages(error)).not.toContain(KEY.toString("base64"));
+  });
 });
 
 describe("cloudflare.list", () => {
@@ -366,6 +491,45 @@ describe("cloudflare.list", () => {
         accountIdOrigin: "cf session",
         scopes: ["account:read", "workers:write"],
         expiresAt: Date.parse("2026-09-30T09:00:00.000Z"),
+      },
+    ]);
+  });
+
+  it("lists a sealed session it can open like any other", async () => {
+    onPlatform("linux");
+    cf.sealedWith = KEY;
+    cf.whoami = sessionStatus(["acct-1"]);
+    const { list } = await load();
+
+    expect(await list()).toMatchObject([{ origin: "cf", active: true, state: "valid" }]);
+  });
+
+  it("won't call a session valid when the keyring keeps its token", async () => {
+    onPlatform("linux");
+    cf.sealedWith = KEY;
+    keyring = null;
+    cf.whoami = sessionStatus(["acct-1"]);
+    const { list } = await load();
+
+    const [entry] = await list();
+    expect(entry).toMatchObject({
+      origin: "cf",
+      active: false,
+      state: "unchecked",
+      account: "dev@example.com",
+      note: "resolve cannot use this session. The cf OAuth credentials file is encrypted, and its key could not be read from the OS keyring",
+    });
+  });
+
+  it("keeps a cf login that isn't OAuth out of resolve's way", async () => {
+    cf.whoami = { ...sessionStatus(["acct-1"]), authSource: "Global API key" };
+    const { list } = await load();
+
+    expect(await list()).toMatchObject([
+      {
+        active: false,
+        state: "unchecked",
+        note: "resolve cannot use this session. cf CLI reports no OAuth session",
       },
     ]);
   });
