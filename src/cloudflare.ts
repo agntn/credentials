@@ -2,12 +2,13 @@
  * Cloudflare API credentials: a bearer token and the account it acts on.
  *
  * The token comes from the caller, then `CLOUDFLARE_API_TOKEN`, then the cf CLI's
- * OAuth session. The account comes from the caller, then `AGNTN_CLOUDFLARE_ACCOUNT_ID`,
- * then `CLOUDFLARE_ACCOUNT_ID`, then the cf session when it reaches exactly one account.
+ * OAuth session, keyring or not. The account comes from the caller, then
+ * `AGNTN_CLOUDFLARE_ACCOUNT_ID`, then `CLOUDFLARE_ACCOUNT_ID`, then the cf session when it
+ * reaches exactly one account.
  */
 
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { type CfCredentials, type CfUnreadable, readCfCredentials } from "./core/cf.ts";
 import { CredentialsError } from "./core/errors.ts";
 import { compact, epoch, isRecord, nonEmptyString } from "./core/fields.ts";
 import { withoutVariables } from "./core/forge.ts";
@@ -58,6 +59,9 @@ const TOKEN_REFUSALS = [400, 401, 403];
 const EXPIRY_MARGIN_MS = 60_000;
 const SETUP_HINT =
   "Set CLOUDFLARE_API_TOKEN, or run `cf auth login` to use the cf CLI's OAuth session";
+/** A plain login would put the session right back in the keyring. */
+const KEYRING_HINT =
+  "Set CLOUDFLARE_API_TOKEN, or run `cf auth login --no-use-keyring` to keep the session in a file this package can read";
 
 let cfSession: CfSession | undefined;
 let cfSessionPromise: Promise<CfSession> | undefined;
@@ -182,12 +186,12 @@ function untilAborted(session: Promise<CfSession>, signal: AbortSignal): Promise
 async function loadCfSession(): Promise<CfSession> {
   const status = await cfStatus();
   const stored = await readCfToken(status.authSource);
-  const expiresAt = epoch(stored.expiration_time);
-  return {
+  if ("unreadable" in stored) throw unreadableSession(stored);
+  return compact({
     accountIds: accountIds(status.accounts),
-    token: stored.oauth_token,
-    ...(expiresAt === undefined ? {} : { expiresAt }),
-  };
+    token: stored.token,
+    expiresAt: stored.expiresAt,
+  });
 }
 
 /**
@@ -225,26 +229,21 @@ async function cfWhoami(): Promise<string> {
 /**
  * Read the OAuth token cf keeps in the file its status names.
  * @param source - The `authSource` line from `cf auth whoami`.
- * @returns {Promise<Record<string, unknown>>} The stored credentials with a token.
+ * @returns {Promise<CfCredentials | CfUnreadable>} The token, or why there is none to hand out.
  */
-async function readCfToken(
-  source: unknown,
-): Promise<Record<string, unknown> & { oauth_token: string }> {
+async function readCfToken(source: unknown): Promise<CfCredentials | CfUnreadable> {
   if (typeof source !== "string" || !source.startsWith(CF_OAUTH_SOURCE)) {
-    throw cfFailure("cf CLI reports no OAuth session");
+    return { unreadable: "cf CLI reports no OAuth session", keyring: false };
   }
-  let text: string;
-  try {
-    text = await readFile(source.slice(CF_OAUTH_SOURCE.length), "utf8");
-  } catch (error) {
-    throw cfFailure("Cannot read the cf OAuth credentials file", error);
-  }
-  // An OS keyring keeps the file encrypted, and only cf can read it then.
-  const stored = parseJson(text, "Cannot read the cf OAuth credentials file");
-  if (!isRecord(stored) || typeof stored.oauth_token !== "string" || stored.oauth_token === "") {
-    throw cfFailure("The cf OAuth credentials file holds no token");
-  }
-  return stored as Record<string, unknown> & { oauth_token: string };
+  return readCfCredentials(source.slice(CF_OAUTH_SOURCE.length));
+}
+
+function unreadableSession(stored: Readonly<CfUnreadable>): CredentialsError {
+  return new CredentialsError(
+    SERVICE,
+    `${stored.unreadable}. ${stored.keyring ? KEYRING_HINT : SETUP_HINT}`,
+    { code: "token", ...(stored.cause === undefined ? {} : { cause: stored.cause }) },
+  );
 }
 
 function accountIds(accounts: unknown): string[] {
@@ -295,7 +294,8 @@ const API_BASE = `https://${API_HOST}/client/v4`;
  *
  * Lists `CLOUDFLARE_API_TOKEN` and the cf OAuth session, and names the account
  * `resolve` would act on for each. Running cf reaches the network, so the session's
- * state comes from cf whether or not `verify` is on. `verify` checks the env token
+ * state comes from cf whether or not `verify` is on. A session whose token can't be
+ * read is listed, never active and never called valid. `verify` checks the env token
  * against `/user/tokens/verify`.
  * @param options - Whether to ask Cloudflare about the env token.
  * @returns {Promise<CredentialInfo[]>} The env token first, then the cf session.
@@ -384,6 +384,8 @@ async function sessionEntry(
   } catch {
     return undefined;
   }
+  const stored = await readCfToken(status.authSource);
+  const unreadable = "unreadable" in stored ? stored.unreadable : undefined;
   const ids = accountIds(status.accounts);
   const expiresAt = epoch(status.expiresAt);
   const target = account ?? (ids.length === 1 ? { id: ids[0]!, origin: "cf session" } : undefined);
@@ -392,18 +394,41 @@ async function sessionEntry(
     host: API_HOST,
     source: "cli",
     origin: "cf",
-    active,
-    state: sessionState(status.tokenValid, expiresAt),
+    active: active && unreadable === undefined,
+    state: readableState(sessionState(status.tokenValid, expiresAt), unreadable),
     account: nonEmptyString(status.email),
     accountId: target?.id,
     accountIdOrigin: target?.origin,
     scopes: strings(status.scopes),
     expiresAt,
-    note:
-      target === undefined
-        ? `the session reaches ${ids.length} accounts and none is chosen`
-        : undefined,
+    note: unreadable === undefined ? accountNote(target, ids) : unusableNote(unreadable),
   });
+}
+
+/**
+ * Take cf's `valid` back for a token `resolve` can't read.
+ * @param state - What cf's own report says.
+ * @param unreadable - Why the token can't be read, if it can't.
+ * @returns {CredentialInfo["state"]} The state to list.
+ */
+function readableState(
+  state: CredentialInfo["state"],
+  unreadable: string | undefined,
+): CredentialInfo["state"] {
+  return state === "valid" && unreadable !== undefined ? "unchecked" : state;
+}
+
+function unusableNote(unreadable: string): string {
+  return `resolve cannot use this session. ${unreadable}`;
+}
+
+function accountNote(
+  target: AccountSetting | undefined,
+  ids: readonly string[],
+): string | undefined {
+  return target === undefined
+    ? `the session reaches ${ids.length} accounts and none is chosen`
+    : undefined;
 }
 
 /**
