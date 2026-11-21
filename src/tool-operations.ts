@@ -19,6 +19,7 @@ import { list as listGitee } from "./gitee.ts";
 import { list as listGithub } from "./github.ts";
 import { list as listGitlab } from "./gitlab.ts";
 import { list as listPushin } from "./pushin.ts";
+import { list as listRadicle } from "./radicle.ts";
 import { list as listSourcehut } from "./sourcehut.ts";
 import { list as listTangled } from "./tangled.ts";
 import { SERVICES } from "./tool-contract.ts";
@@ -58,6 +59,7 @@ const LISTERS: Record<
   "cursor-origin": listCursorOrigin,
   gitcafe: listGitcafe,
   tangled: listTangled,
+  radicle: listRadicle,
   cloudflare: listCloudflare,
 };
 
@@ -74,6 +76,7 @@ const SETUP: Record<Service, string> = {
   "cursor-origin": "set CURSOR_AUTH_TOKEN or run origin auth login",
   gitcafe: "set CAFE_TOKEN or run cafe auth login",
   tangled: "set TANGLED_HANDLE and TANGLED_PASSWORD, an app password",
+  radicle: "run rad auth",
   cloudflare: "set CLOUDFLARE_API_TOKEN or run cf auth login",
 };
 

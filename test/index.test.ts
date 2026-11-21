@@ -12,6 +12,7 @@ import * as gitee from "../src/gitee.ts";
 import * as github from "../src/github.ts";
 import * as gitlab from "../src/gitlab.ts";
 import * as pushin from "../src/pushin.ts";
+import * as radicle from "../src/radicle.ts";
 import * as sourcehut from "../src/sourcehut.ts";
 import * as tangled from "../src/tangled.ts";
 import { SERVICES } from "../src/core/types.ts";
@@ -37,6 +38,7 @@ describe("@agntn/credentials", () => {
       github,
       gitlab,
       pushin,
+      radicle,
       sourcehut,
       tangled,
     ]) {
