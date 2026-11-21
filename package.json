@@ -1,7 +1,7 @@
 {
   "name": "@agntn/credentials",
   "version": "0.1.1",
-  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin, Cursor Origin, GitCafe, Tangled and Cloudflare.",
+  "description": "Find the tokens your CLIs and environment already hold, for GitHub, GitLab, Gitea, Gitee, Sourcehut, Bitbucket, Azure DevOps, Pushin, Cursor Origin, GitCafe, Tangled, Radicle and Cloudflare.",
   "keywords": [
     "agents",
     "azure-devops",
@@ -15,6 +15,7 @@
     "github",
     "gitlab",
     "pushin",
+    "radicle",
     "sourcehut",
     "tangled",
     "token"
@@ -92,6 +93,10 @@
       "types": "./dist/pushin.d.mts",
       "import": "./dist/pushin.mjs"
     },
+    "./radicle": {
+      "types": "./dist/radicle.d.mts",
+      "import": "./dist/radicle.mjs"
+    },
     "./sourcehut": {
       "types": "./dist/sourcehut.d.mts",
       "import": "./dist/sourcehut.mjs"
@@ -115,6 +120,7 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
+    "@agntn/encodings": "catalog:deps",
     "@agntn/tools": "catalog:deps",
     "@modelcontextprotocol/server": "catalog:deps"
   },

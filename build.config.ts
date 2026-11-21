@@ -17,6 +17,7 @@ export default defineBuildConfig({
         "./src/github.ts",
         "./src/gitlab.ts",
         "./src/pushin.ts",
+        "./src/radicle.ts",
         "./src/sourcehut.ts",
         "./src/tangled.ts",
         "./src/cli.ts",

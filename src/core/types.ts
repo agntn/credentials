@@ -14,6 +14,7 @@ export const SERVICES = [
   "cursor-origin",
   "gitcafe",
   "tangled",
+  "radicle",
   "cloudflare",
 ] as const;
 

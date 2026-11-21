@@ -5,7 +5,7 @@
 [![license](https://npmx.dev/api/registry/badge/license/@agntn/credentials)](https://npmx.dev/package/@agntn/credentials)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/agntn/credentials)
 
-🔑 Twelve services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
+🔑 Thirteen services, one `resolve` and one `list` each. You already logged in with `gh` and `cf`. Your code should notice.
 
 ## Why?
 
@@ -50,6 +50,7 @@ pushin: nothing found (set PUSHIN_TOKEN or run pun login)
 cursor-origin: nothing found (set CURSOR_AUTH_TOKEN or run origin auth login)
 gitcafe: nothing found (set CAFE_TOKEN or run cafe auth login)
 tangled: nothing found (set TANGLED_HANDLE and TANGLED_PASSWORD, an app password)
+radicle: nothing found (run rad auth)
 cloudflare: nothing found (set CLOUDFLARE_API_TOKEN or run cf auth login)
 ```
 
@@ -102,6 +103,7 @@ Both came from the CLIs. No env, no config. The Cloudflare token is cached until
 | `@agntn/credentials/cursor-origin` | `CURSOR_AUTH_TOKEN`                                             | `origin auth token`, `origin-cli/credentials.json`          |
 | `@agntn/credentials/gitcafe`       | `CAFE_TOKEN`                                                    | `cafe auth http credential get`, `gitcafe/credentials.json` |
 | `@agntn/credentials/tangled`       | `TANGLED_HANDLE` with `TANGLED_PASSWORD`, `TANGLED_PDS_URL`     | none                                                        |
+| `@agntn/credentials/radicle`       | `RAD_HOME`, `RAD_PASSPHRASE`                                    | `rad auth` key, `.radicle/keys`                             |
 | `@agntn/credentials/cloudflare`    | `CLOUDFLARE_API_TOKEN`                                          | `cf auth whoami` OAuth session                              |
 
 Nothing found? You get `null`. Honest answer. An empty `GH_TOKEN=` still counts and means anonymous.
@@ -110,7 +112,7 @@ Cloudflare is the one that throws. Branch on the `code` of `CredentialsError`, `
 
 Two lookups do more than read a file. Sourcehut runs hut's `access-token-cmd`, so the token stays in `pass`. On Linux, Azure DevOps reads the plain text PAT file az falls back to. Keyring was plan A.
 
-The exact order per service sits in the doc comments: [`src/core/forge.ts`](./src/core/forge.ts), [`src/tangled.ts`](./src/tangled.ts) and [`src/cloudflare.ts`](./src/cloudflare.ts).
+The exact order per service sits in the doc comments: [`src/core/forge.ts`](./src/core/forge.ts), [`src/tangled.ts`](./src/tangled.ts), [`src/radicle.ts`](./src/radicle.ts) and [`src/cloudflare.ts`](./src/cloudflare.ts).
 
 ## 🤖 Agents
 

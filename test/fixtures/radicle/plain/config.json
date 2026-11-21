@@ -1,0 +1,46 @@
+{
+  "publicExplorer": "https://radicle.network/nodes/$host/$rid$path",
+  "preferredSeeds": [],
+  "cli": {
+    "hints": true
+  },
+  "node": {
+    "alias": "alice",
+    "listen": [],
+    "peers": {
+      "type": "dynamic"
+    },
+    "connect": [],
+    "externalAddresses": [],
+    "network": "main",
+    "log": "INFO",
+    "relay": "auto",
+    "limits": {
+      "routingMaxSize": 1000,
+      "routingMaxAge": 604800,
+      "gossipMaxAge": 1209600,
+      "fetchConcurrency": 1,
+      "maxOpenFiles": 4096,
+      "rate": {
+        "inbound": {
+          "fillRate": 5.0,
+          "capacity": 1024
+        },
+        "outbound": {
+          "fillRate": 10.0,
+          "capacity": 2048
+        }
+      },
+      "connection": {
+        "inbound": 128,
+        "outbound": 16
+      },
+      "fetchPackReceive": "500.0 MiB",
+      "fetchTimeout": 30
+    },
+    "workers": 8,
+    "seedingPolicy": {
+      "default": "block"
+    }
+  }
+}
