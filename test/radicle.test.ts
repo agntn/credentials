@@ -1,5 +1,14 @@
 import { Buffer } from "node:buffer";
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,10 +60,10 @@ describe("radicle.resolve", () => {
     vi.stubEnv("RAD_HOME", path);
 
     expect(resolve()).toEqual({
-      home: path,
+      home: realpathSync(path),
       did: ALICE,
       alias: "alice",
-      keyPath: join(path, "keys", "radicle"),
+      keyPath: join(realpathSync(path), "keys", "radicle"),
       encrypted: false,
       source: "env",
     });
@@ -76,6 +85,16 @@ describe("radicle.resolve", () => {
 
     vi.stubEnv("RAD_HOME", home("plain"));
     expect(resolve()).not.toHaveProperty("passphrase");
+  });
+
+  it("follows a symlink before the .. after it, as rad canonicalizes the home", () => {
+    const path = home("plain");
+    mkdirSync(join(path, "bin"));
+    const work = mkdtempSync(join(tmpdir(), "credentials-radicle-work-"));
+    symlinkSync(join(path, "bin"), join(work, "current"));
+    vi.stubEnv("RAD_HOME", `${work}/current/..`);
+
+    expect(resolve()).toMatchObject({ did: ALICE, home: realpathSync(path) });
   });
 
   it("treats an empty RAD_HOME as an error, not as a reason to read ~/.radicle", () => {
@@ -114,6 +133,20 @@ describe("radicle.resolve", () => {
     }
     writeFileSync(config, JSON.stringify({ node: { alias: "carol" } }));
     expect(resolve()).toMatchObject({ did: ALICE, alias: "carol" });
+  });
+
+  it("reads .radicle from the working directory under an empty HOME, as rad does", () => {
+    const work = realpathSync(mkdtempSync(join(tmpdir(), "credentials-radicle-cwd-")));
+    cpSync(home("plain"), join(work, ".radicle"), { recursive: true });
+    const probe = "import(process.argv[1]).then((m) => console.log(JSON.stringify(m.resolve())))";
+    const source = fileURLToPath(new URL("../src/radicle.ts", import.meta.url));
+    const { stdout } = spawnSync(process.execPath, ["-e", probe, source], {
+      cwd: work,
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, HOME: "" },
+    });
+
+    expect(JSON.parse(stdout)).toMatchObject({ did: ALICE, home: join(work, ".radicle") });
   });
 
   it("finds nothing without a HOME to put .radicle in, as rad does", () => {

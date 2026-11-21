@@ -4,7 +4,7 @@
  */
 
 import { Buffer } from "node:buffer";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { createBase58 } from "@agntn/encodings/base58";
 import { compact, isRecord, nonEmptyString } from "./core/fields.ts";
@@ -105,12 +105,24 @@ export async function list(_options?: ListOptions): Promise<CredentialInfo[]> {
 }
 
 /**
- * Pick the Radicle home like `rad`: RAD_HOME as is, else `.radicle` under HOME.
+ * Pick the Radicle home like `rad`: RAD_HOME as is, else `.radicle` under HOME, then
+ * canonicalize it the way `Home::new` does, so a symlink resolves before a `..` after it.
  * @param explicit - The caller's home, if any.
  * @returns {Home | undefined} The path and the step that named it, or undefined where `rad`
- * gives up too: an empty RAD_HOME, or no HOME to put `.radicle` in.
+ * gives up too: an empty RAD_HOME, no HOME to put `.radicle` in, or a home that isn't there.
  */
 function radicleHome(explicit: string | undefined): Home | undefined {
+  const home = namedHome(explicit);
+  const path = home === undefined ? undefined : canonical(home.path);
+  return home === undefined || path === undefined ? undefined : { ...home, path };
+}
+
+/**
+ * The home the caller or the environment names, before any path is resolved.
+ * @param explicit - The caller's home, if any.
+ * @returns {Home | undefined} The path as written, or undefined where `rad` has none.
+ */
+function namedHome(explicit: string | undefined): Home | undefined {
   const given = nonEmptyString(explicit);
   if (given !== undefined) return { path: given, source: "explicit", origin: "home" };
   const variable = process.env[HOME];
@@ -121,6 +133,20 @@ function radicleHome(explicit: string | undefined): Home | undefined {
   return base === undefined
     ? undefined
     : { path: join(base, ".radicle"), source: "config", origin: KEY_FILE };
+}
+
+/**
+ * Resolve a path through the file system, not through string rules. `native` is
+ * `realpath(3)`, while the JS one strips `..` before it looks at a symlink.
+ * @param path - The home as written.
+ * @returns {string | undefined} The real path, or undefined when it doesn't exist.
+ */
+function canonical(path: string): string | undefined {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
